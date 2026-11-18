@@ -1,0 +1,780 @@
+"use strict";
+var Domain = (() => {
+  var __defProp = Object.defineProperty;
+  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+  var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __export = (target, all) => {
+    for (var name in all)
+      __defProp(target, name, { get: all[name], enumerable: true });
+  };
+  var __copyProps = (to, from, except, desc) => {
+    if (from && typeof from === "object" || typeof from === "function") {
+      for (let key of __getOwnPropNames(from))
+        if (!__hasOwnProp.call(to, key) && key !== except)
+          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+    }
+    return to;
+  };
+  var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+  // src/domain/index.ts
+  var index_exports = {};
+  __export(index_exports, {
+    ACHIEVEMENTS: () => ACHIEVEMENTS,
+    ATTRIBUTES: () => ATTRIBUTES,
+    ATTRIBUTE_IDS: () => ATTRIBUTE_IDS,
+    MAX_ATTRIBUTE_LEVEL: () => MAX_ATTRIBUTE_LEVEL,
+    MAX_LEVEL: () => MAX_LEVEL,
+    MAX_MISSION_XP: () => MAX_MISSION_XP,
+    MIN_MISSION_XP: () => MIN_MISSION_XP,
+    RANKS: () => RANKS,
+    RARITY_COLOR: () => RARITY_COLOR,
+    RARITY_LABEL: () => RARITY_LABEL,
+    REWARD_PRESETS: () => REWARD_PRESETS,
+    achievementById: () => achievementById,
+    achievementProgress: () => achievementProgress,
+    addDays: () => addDays,
+    addMission: () => addMission,
+    addProgress: () => addProgress,
+    attributeProgress: () => attributeProgress,
+    attributeXpToNext: () => attributeXpToNext,
+    buildMission: () => buildMission,
+    checkRank: () => checkRank,
+    completeMission: () => completeMission,
+    createInitialState: () => createInitialState,
+    dailyMissions: () => dailyMissions,
+    dayKey: () => dayKey,
+    dayNumber: () => dayNumber,
+    deriveStats: () => deriveStats,
+    emptyAttributeXp: () => emptyAttributeXp,
+    evaluateRankIndex: () => evaluateRankIndex,
+    expireMissions: () => expireMissions,
+    isAchieved: () => isAchieved,
+    isMissionDone: () => isMissionDone,
+    isMissionExpired: () => isMissionExpired,
+    lastDays: () => lastDays,
+    levelFromXp: () => levelFromXp,
+    levelProgress: () => levelProgress,
+    maybeSpawnEmergency: () => maybeSpawnEmergency,
+    missionProgress: () => missionProgress,
+    missionRatio: () => missionRatio,
+    newId: () => newId,
+    nextAchievement: () => nextAchievement,
+    nextRank: () => nextRank,
+    pendingDaily: () => pendingDaily,
+    pendingMissions: () => pendingMissions,
+    periodKey: () => periodKey,
+    playerLevel: () => playerLevel,
+    rankById: () => rankById,
+    removeMission: () => removeMission,
+    splitXp: () => splitXp,
+    suggestedXp: () => suggestedXp,
+    totalXpForLevel: () => totalXpForLevel,
+    validateMissionInput: () => validateMissionInput,
+    verifyState: () => verifyState,
+    weekKey: () => weekKey,
+    xpByDay: () => xpByDay,
+    xpToNextLevel: () => xpToNextLevel,
+    xpToday: () => xpToday
+  });
+
+  // src/domain/achievements.ts
+  var RARITY_COLOR = {
+    common: "#8A94A6",
+    uncommon: "#5CC8A1",
+    rare: "#4DA3FF",
+    epic: "#A78BFA",
+    legendary: "#FFD166"
+  };
+  var RARITY_LABEL = {
+    common: "Comum",
+    uncommon: "Incomum",
+    rare: "Rara",
+    epic: "\xC9pica",
+    legendary: "Lend\xE1ria"
+  };
+  var ACHIEVEMENTS = [
+    { id: "primeiro-despertar", name: "Primeiro Despertar", description: "Conclua sua primeira miss\xE3o.", rarity: "common", icon: "\u263C", rewardXp: 25, metric: "missionsCompleted", target: 1 },
+    { id: "discipulo", name: "Disc\xEDpulo", description: "Evolua por 7 dias seguidos.", rarity: "uncommon", icon: "\u26EC", rewardXp: 100, metric: "bestStreak", target: 7 },
+    { id: "nivel-10", name: "Em Ascens\xE3o", description: "Alcance o n\xEDvel 10.", rarity: "uncommon", icon: "\u25B2", rewardXp: 150, metric: "level", target: 10 },
+    { id: "cacador-metas", name: "Ca\xE7ador de Metas", description: "Conclua 50 objetivos.", rarity: "rare", icon: "\u25CE", rewardXp: 250, metric: "missionsCompleted", target: 50 },
+    { id: "incansavel", name: "Incans\xE1vel", description: "Complete 30 dias de atividades.", rarity: "rare", icon: "\u221E", rewardXp: 300, metric: "activeDays", target: 30 },
+    { id: "guerreiro", name: "Guerreiro", description: "Complete 50 treinos.", rarity: "rare", icon: "\u2694", rewardXp: 300, metric: "trainings", target: 50 },
+    { id: "nivel-25", name: "Veterano", description: "Alcance o n\xEDvel 25.", rarity: "rare", icon: "\u25B2\u25B2", rewardXp: 400, metric: "level", target: 25 },
+    { id: "intelectual", name: "Intelectual", description: "Acumule 100 horas de estudo.", rarity: "epic", icon: "\u2727", rewardXp: 500, metric: "studyHours", target: 100 },
+    { id: "maratonista", name: "Maratonista", description: "Evolua por 30 dias seguidos.", rarity: "epic", icon: "\u26A1", rewardXp: 600, metric: "bestStreak", target: 30 },
+    { id: "ritual", name: "Ritual", description: "Complete 100 dias de atividades.", rarity: "epic", icon: "\u262F", rewardXp: 700, metric: "activeDays", target: 100 },
+    { id: "centuriao", name: "Centuri\xE3o", description: "Conclua 200 miss\xF5es.", rarity: "epic", icon: "\u269C", rewardXp: 800, metric: "missionsCompleted", target: 200 },
+    { id: "nivel-50", name: "Meio Caminho", description: "Alcance o n\xEDvel 50.", rarity: "epic", icon: "\u25C6", rewardXp: 1e3, metric: "level", target: 50 },
+    { id: "ascensao", name: "Ascens\xE3o", description: "Alcance o Rank S.", rarity: "epic", icon: "\u2739", rewardXp: 1e3, metric: "rankIndex", target: 5 },
+    { id: "monarca", name: "Monarca", description: "Alcance o ranking m\xE1ximo.", rarity: "legendary", icon: "\u265B", rewardXp: 5e3, metric: "rankIndex", target: 8 }
+  ];
+  var achievementById = (id) => ACHIEVEMENTS.find((a) => a.id === id);
+  var achievementProgress = (a, stats) => ({
+    current: Math.min(stats[a.metric], a.target),
+    target: a.target
+  });
+  var isAchieved = (a, stats) => stats[a.metric] >= a.target;
+
+  // src/domain/attributes.ts
+  var ATTRIBUTE_IDS = [
+    "forca",
+    "inteligencia",
+    "disciplina",
+    "vitalidade",
+    "foco",
+    "carisma"
+  ];
+  var ATTRIBUTES = {
+    forca: {
+      id: "forca",
+      name: "For\xE7a",
+      short: "FOR",
+      description: "Exerc\xEDcios f\xEDsicos, muscula\xE7\xE3o e condicionamento.",
+      color: "#FF5A5F",
+      glyph: "\u2694"
+    },
+    inteligencia: {
+      id: "inteligencia",
+      name: "Intelig\xEAncia",
+      short: "INT",
+      description: "Estudos, programa\xE7\xE3o, cursos e aprendizado.",
+      color: "#4DA3FF",
+      glyph: "\u2727"
+    },
+    disciplina: {
+      id: "disciplina",
+      name: "Disciplina",
+      short: "DIS",
+      description: "Cumprimento de h\xE1bitos e compromissos.",
+      color: "#A78BFA",
+      glyph: "\u26EC"
+    },
+    vitalidade: {
+      id: "vitalidade",
+      name: "Vitalidade",
+      short: "VIT",
+      description: "Sono, alimenta\xE7\xE3o e cuidados pessoais.",
+      color: "#34D399",
+      glyph: "\u271A"
+    },
+    foco: {
+      id: "foco",
+      name: "Foco",
+      short: "FOC",
+      description: "Concentra\xE7\xE3o, leitura e execu\xE7\xE3o de tarefas.",
+      color: "#FBBF24",
+      glyph: "\u25CE"
+    },
+    carisma: {
+      id: "carisma",
+      name: "Carisma",
+      short: "CAR",
+      description: "Comunica\xE7\xE3o, socializa\xE7\xE3o e desenvolvimento interpessoal.",
+      color: "#F472B6",
+      glyph: "\u2756"
+    }
+  };
+  var emptyAttributeXp = () => ({
+    forca: 0,
+    inteligencia: 0,
+    disciplina: 0,
+    vitalidade: 0,
+    foco: 0,
+    carisma: 0
+  });
+
+  // src/domain/dates.ts
+  var pad = (n) => String(n).padStart(2, "0");
+  function dayKey(date) {
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  }
+  function weekKey(date) {
+    const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const offset = (d.getDay() + 6) % 7;
+    d.setDate(d.getDate() - offset);
+    return dayKey(d);
+  }
+  function dayNumber(key) {
+    const [y, m, d] = key.split("-").map(Number);
+    return Math.round(Date.UTC(y, m - 1, d) / 864e5);
+  }
+  function addDays(date, days) {
+    const d = new Date(date);
+    d.setDate(d.getDate() + days);
+    return d;
+  }
+  function lastDays(end, count) {
+    const out = [];
+    for (let i = count - 1; i >= 0; i--) out.push(dayKey(addDays(end, -i)));
+    return out;
+  }
+
+  // src/domain/ranks.ts
+  var req = (r) => ({
+    minLevel: 1,
+    minActiveDays: 0,
+    minAchievements: 0,
+    minAttributeLevel: 1,
+    requiredAchievements: [],
+    ...r
+  });
+  var RANKS = [
+    {
+      id: "E",
+      name: "Rank E",
+      title: "Despertar",
+      color: "#8A94A6",
+      emblem: "E",
+      description: "O sistema reconheceu voc\xEA. A jornada come\xE7a agora.",
+      requirements: req({})
+    },
+    {
+      id: "D",
+      name: "Rank D",
+      title: "Iniciante",
+      color: "#5CC8A1",
+      emblem: "D",
+      description: "Os primeiros h\xE1bitos tomam forma. Voc\xEA j\xE1 n\xE3o \xE9 o mesmo.",
+      requirements: req({ minLevel: 5, minActiveDays: 3 })
+    },
+    {
+      id: "C",
+      name: "Rank C",
+      title: "Combatente",
+      color: "#4DA3FF",
+      emblem: "C",
+      description: "Const\xE2ncia come\xE7a a virar identidade.",
+      requirements: req({ minLevel: 12, minActiveDays: 14, minAchievements: 1 })
+    },
+    {
+      id: "B",
+      name: "Rank B",
+      title: "Elite",
+      color: "#A78BFA",
+      emblem: "B",
+      description: "Poucos chegam at\xE9 aqui sem desistir.",
+      requirements: req({ minLevel: 22, minActiveDays: 45, minAchievements: 3, minAttributeLevel: 3 })
+    },
+    {
+      id: "A",
+      name: "Rank A",
+      title: "Especialista",
+      color: "#F59E0B",
+      emblem: "A",
+      description: "Dom\xEDnio t\xE9cnico e disciplina em equil\xEDbrio.",
+      requirements: req({ minLevel: 35, minActiveDays: 100, minAchievements: 5, minAttributeLevel: 6 })
+    },
+    {
+      id: "S",
+      name: "Rank S",
+      title: "Supremo",
+      color: "#EF4444",
+      emblem: "S",
+      description: "Seu nome \xE9 respeitado dentro do sistema.",
+      requirements: req({
+        minLevel: 50,
+        minActiveDays: 180,
+        minAchievements: 6,
+        minAttributeLevel: 10,
+        requiredAchievements: ["incansavel"]
+      })
+    },
+    {
+      id: "SS",
+      name: "Rank SS",
+      title: "Lend\xE1rio",
+      color: "#EC4899",
+      emblem: "SS",
+      description: "Uma lenda constru\xEDda um dia de cada vez.",
+      requirements: req({ minLevel: 70, minActiveDays: 365, minAchievements: 8, minAttributeLevel: 20 })
+    },
+    {
+      id: "SSS",
+      name: "Rank SSS",
+      title: "Transcendente",
+      color: "#22D3EE",
+      emblem: "SSS",
+      description: "Voc\xEA ultrapassou o que achava poss\xEDvel.",
+      requirements: req({ minLevel: 90, minActiveDays: 600, minAchievements: 10, minAttributeLevel: 30 })
+    },
+    {
+      id: "MONARCA",
+      name: "MONARCA",
+      title: "O \xE1pice da evolu\xE7\xE3o",
+      color: "#FFD166",
+      emblem: "\u265B",
+      description: "O trono \xE9 de quem nunca parou de evoluir.",
+      requirements: req({
+        minLevel: 100,
+        minActiveDays: 900,
+        minAchievements: 12,
+        minAttributeLevel: 40,
+        requiredAchievements: ["ascensao"]
+      })
+    }
+  ];
+  var rankById = (id) => RANKS.find((r) => r.id === id);
+  function checkRank(rank, stats, unlockedIds) {
+    const r = rank.requirements;
+    const checks = [
+      { label: "N\xEDvel", current: stats.level, target: r.minLevel, met: stats.level >= r.minLevel },
+      {
+        label: "Dias de evolu\xE7\xE3o",
+        current: stats.activeDays,
+        target: r.minActiveDays,
+        met: stats.activeDays >= r.minActiveDays
+      }
+    ];
+    if (r.minAchievements > 0) {
+      checks.push({
+        label: "Conquistas",
+        current: stats.unlockedCount,
+        target: r.minAchievements,
+        met: stats.unlockedCount >= r.minAchievements
+      });
+    }
+    if (r.minAttributeLevel > 1) {
+      checks.push({
+        label: "Todos os atributos no n\xEDvel",
+        current: stats.minAttributeLevel,
+        target: r.minAttributeLevel,
+        met: stats.minAttributeLevel >= r.minAttributeLevel
+      });
+    }
+    for (const id of r.requiredAchievements) {
+      const met = unlockedIds.includes(id);
+      checks.push({ label: `Conquista: ${id}`, current: met ? 1 : 0, target: 1, met });
+    }
+    return checks;
+  }
+  function evaluateRankIndex(stats, unlockedIds) {
+    let idx = 0;
+    for (let i = 1; i < RANKS.length; i++) {
+      if (checkRank(RANKS[i], stats, unlockedIds).every((c) => c.met)) idx = i;
+      else break;
+    }
+    return idx;
+  }
+
+  // src/domain/xp.ts
+  var MAX_LEVEL = 100;
+  function xpToNextLevel(level) {
+    return Math.round(60 + 10 * Math.pow(level, 1.4));
+  }
+  var THRESHOLDS = (() => {
+    const t = [0, 0];
+    for (let l = 1; l < MAX_LEVEL; l++) t.push(t[l] + xpToNextLevel(l));
+    return t;
+  })();
+  function totalXpForLevel(level) {
+    return THRESHOLDS[Math.min(Math.max(level, 1), MAX_LEVEL)];
+  }
+  function levelProgress(totalXp) {
+    const xp = Math.max(0, Math.floor(totalXp));
+    let level = 1;
+    while (level < MAX_LEVEL && xp >= THRESHOLDS[level + 1]) level++;
+    if (level >= MAX_LEVEL) {
+      return { level: MAX_LEVEL, xpIntoLevel: 0, xpForNext: 0, ratio: 1, isMax: true };
+    }
+    const xpIntoLevel = xp - THRESHOLDS[level];
+    const xpForNext = xpToNextLevel(level);
+    return { level, xpIntoLevel, xpForNext, ratio: xpIntoLevel / xpForNext, isMax: false };
+  }
+  var levelFromXp = (totalXp) => levelProgress(totalXp).level;
+  var MAX_ATTRIBUTE_LEVEL = 50;
+  function attributeXpToNext(level) {
+    return Math.round(40 + 8 * Math.pow(level, 1.4));
+  }
+  var ATTR_THRESHOLDS = (() => {
+    const t = [0, 0];
+    for (let l = 1; l < MAX_ATTRIBUTE_LEVEL; l++) t.push(t[l] + attributeXpToNext(l));
+    return t;
+  })();
+  function attributeProgress(xp) {
+    const v = Math.max(0, Math.floor(xp));
+    let level = 1;
+    while (level < MAX_ATTRIBUTE_LEVEL && v >= ATTR_THRESHOLDS[level + 1]) level++;
+    if (level >= MAX_ATTRIBUTE_LEVEL) {
+      return { level, xpIntoLevel: 0, xpForNext: 0, ratio: 1, isMax: true };
+    }
+    const xpIntoLevel = v - ATTR_THRESHOLDS[level];
+    const xpForNext = attributeXpToNext(level);
+    return { level, xpIntoLevel, xpForNext, ratio: xpIntoLevel / xpForNext, isMax: false };
+  }
+  function splitXp(xp, attributes) {
+    const out = {};
+    if (attributes.length === 0) return out;
+    const base = Math.floor(xp / attributes.length);
+    const rest = xp - base * attributes.length;
+    attributes.forEach((a, i) => {
+      var _a;
+      out[a] = ((_a = out[a]) != null ? _a : 0) + base + (i === 0 ? rest : 0);
+    });
+    return out;
+  }
+  var REWARD_PRESETS = {
+    simpleTask: 10,
+    dailyHabit: 20,
+    studyHour: 50,
+    fullWorkout: 60,
+    weeklyMission: 200,
+    specialMission: 500,
+    bigAchievement: 1e3
+  };
+  var BASE_XP = {
+    daily: REWARD_PRESETS.dailyHabit,
+    weekly: REWARD_PRESETS.weeklyMission,
+    special: REWARD_PRESETS.specialMission,
+    emergency: 120
+  };
+  var DIFFICULTY_MULTIPLIER = {
+    E: 0.5,
+    D: 0.75,
+    C: 1,
+    B: 1.5,
+    A: 2,
+    S: 3
+  };
+  function suggestedXp(type, difficulty) {
+    return Math.round(BASE_XP[type] * DIFFICULTY_MULTIPLIER[difficulty] / 5) * 5;
+  }
+  var MIN_MISSION_XP = 1;
+  var MAX_MISSION_XP = 2e3;
+
+  // src/domain/stats.ts
+  function streaks(dayKeys, today) {
+    if (dayKeys.length === 0) return { current: 0, best: 0 };
+    const nums = [...new Set(dayKeys)].map(dayNumber).sort((a, b) => a - b);
+    let best = 1;
+    let run = 1;
+    for (let i = 1; i < nums.length; i++) {
+      run = nums[i] === nums[i - 1] + 1 ? run + 1 : 1;
+      if (run > best) best = run;
+    }
+    const last = nums[nums.length - 1];
+    const todayNum = dayNumber(today);
+    let current = 0;
+    if (last === todayNum || last === todayNum - 1) {
+      current = 1;
+      for (let i = nums.length - 1; i > 0 && nums[i] === nums[i - 1] + 1; i--) current++;
+    }
+    return { current, best };
+  }
+  function deriveStats(state, now = /* @__PURE__ */ new Date()) {
+    const days = state.completions.map((c) => c.day);
+    const { current, best } = streaks(days, dayKey(now));
+    const attributeLevels = {};
+    for (const id of ATTRIBUTE_IDS) attributeLevels[id] = attributeProgress(state.attributeXp[id]).level;
+    const trainings = state.completions.filter((c) => c.attributes.includes("forca")).length;
+    const studyMinutes = state.completions.filter((c) => c.attributes.includes("inteligencia")).reduce((sum, c) => {
+      var _a;
+      return sum + ((_a = c.durationMin) != null ? _a : 0);
+    }, 0);
+    return {
+      level: levelFromXp(state.totalXp),
+      totalXp: state.totalXp,
+      activeDays: new Set(days).size,
+      currentStreak: current,
+      bestStreak: best,
+      missionsCompleted: state.completions.length,
+      trainings,
+      studyHours: Math.floor(studyMinutes / 60),
+      unlockedCount: Object.keys(state.unlocked).length,
+      rankIndex: state.rankIndex,
+      minAttributeLevel: Math.min(...ATTRIBUTE_IDS.map((id) => attributeLevels[id])),
+      attributeLevels
+    };
+  }
+
+  // src/domain/engine.ts
+  var newId = (prefix) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  function periodKey(type, now) {
+    if (type === "daily") return dayKey(now);
+    if (type === "weekly") return weekKey(now);
+    return "once";
+  }
+  function missionProgress(m, now) {
+    return m.progress.periodKey === periodKey(m.type, now) ? m.progress.current : 0;
+  }
+  function isMissionDone(m, now) {
+    return m.status === "completed" || missionProgress(m, now) >= m.target;
+  }
+  function isMissionExpired(m, now) {
+    return m.status === "expired" || !!m.deadline && !isMissionDone(m, now) && new Date(m.deadline) < now;
+  }
+  function validateMissionInput(input) {
+    if (!input.name.trim()) return "D\xEA um nome \xE0 miss\xE3o.";
+    if (input.attributes.length === 0) return "Escolha ao menos um atributo.";
+    if (input.xp !== void 0 && (input.xp < MIN_MISSION_XP || input.xp > MAX_MISSION_XP)) {
+      return `O XP deve ficar entre ${MIN_MISSION_XP} e ${MAX_MISSION_XP}.`;
+    }
+    if (input.target !== void 0 && (input.target < 1 || input.target > 100)) {
+      return "A meta deve ficar entre 1 e 100 etapas.";
+    }
+    return null;
+  }
+  function buildMission(input, now) {
+    var _a, _b, _c;
+    const error = validateMissionInput(input);
+    if (error) throw new Error(error);
+    return {
+      id: newId("m"),
+      name: input.name.trim(),
+      description: ((_a = input.description) != null ? _a : "").trim(),
+      type: input.type,
+      difficulty: input.difficulty,
+      xp: Math.round((_b = input.xp) != null ? _b : suggestedXp(input.type, input.difficulty)),
+      attributes: [...new Set(input.attributes)],
+      deadline: input.deadline,
+      target: Math.round((_c = input.target) != null ? _c : 1),
+      progress: { current: 0, periodKey: periodKey(input.type, now) },
+      status: "active",
+      durationMin: input.durationMin,
+      createdAt: now.toISOString()
+    };
+  }
+  function addMission(state, input, now = /* @__PURE__ */ new Date()) {
+    return { ...state, missions: [...state.missions, buildMission(input, now)] };
+  }
+  function removeMission(state, missionId) {
+    return { ...state, missions: state.missions.filter((m) => m.id !== missionId) };
+  }
+  function expireMissions(state, now = /* @__PURE__ */ new Date()) {
+    let changed = false;
+    const missions = state.missions.map((m) => {
+      if (m.status === "active" && m.deadline && !isMissionDone(m, now) && new Date(m.deadline) < now) {
+        changed = true;
+        return { ...m, status: "expired" };
+      }
+      return m;
+    });
+    return changed ? { ...state, missions } : state;
+  }
+  function grantReward(state, mission, now) {
+    var _a;
+    const split = splitXp(mission.xp, mission.attributes);
+    const attributeXp = { ...state.attributeXp };
+    for (const id of ATTRIBUTE_IDS) attributeXp[id] += (_a = split[id]) != null ? _a : 0;
+    const completion = {
+      id: newId("c"),
+      missionId: mission.id,
+      missionName: mission.name,
+      at: now.toISOString(),
+      day: dayKey(now),
+      xp: mission.xp,
+      attributes: mission.attributes,
+      durationMin: mission.durationMin
+    };
+    return {
+      ...state,
+      totalXp: state.totalXp + mission.xp,
+      attributeXp,
+      completions: [...state.completions, completion]
+    };
+  }
+  function addProgress(state, missionId, amount = 1, now = /* @__PURE__ */ new Date()) {
+    const mission = state.missions.find((m) => m.id === missionId);
+    if (!mission || mission.status !== "active" || isMissionDone(mission, now)) {
+      return { state, events: [] };
+    }
+    if (mission.deadline && new Date(mission.deadline) < now) return { state, events: [] };
+    const key = periodKey(mission.type, now);
+    const previous = mission.progress.periodKey === key ? mission.progress.current : 0;
+    const current = Math.min(mission.target, previous + Math.max(1, Math.floor(amount)));
+    const completed = current >= mission.target;
+    const updated = {
+      ...mission,
+      progress: { current, periodKey: key },
+      status: completed && key === "once" ? "completed" : mission.status
+    };
+    const draft = {
+      ...state,
+      missions: state.missions.map((m) => m.id === missionId ? updated : m)
+    };
+    if (!completed) return { state: draft, events: [] };
+    const events = [{ type: "xp", amount: mission.xp, missionName: mission.name }];
+    return settle(state, grantReward(draft, mission, now), now, events);
+  }
+  function completeMission(state, missionId, now = /* @__PURE__ */ new Date()) {
+    const mission = state.missions.find((m) => m.id === missionId);
+    if (!mission) return { state, events: [] };
+    return addProgress(state, missionId, mission.target - missionProgress(mission, now), now);
+  }
+  function settle(before, draft, now, events) {
+    let state = draft;
+    const at = now.toISOString();
+    const history = [];
+    const achievementEvents = [];
+    for (let i = 0; i < 10; i++) {
+      let changed = false;
+      const stats = deriveStats(state, now);
+      for (const a of ACHIEVEMENTS) {
+        if (!state.unlocked[a.id] && isAchieved(a, stats)) {
+          state = {
+            ...state,
+            unlocked: { ...state.unlocked, [a.id]: at },
+            totalXp: state.totalXp + a.rewardXp
+          };
+          history.push({ id: newId("h"), at, type: "achievement", achievementId: a.id });
+          achievementEvents.push({ type: "achievement", id: a.id, name: a.name, rewardXp: a.rewardXp });
+          changed = true;
+        }
+      }
+      const rank = Math.max(
+        state.rankIndex,
+        evaluateRankIndex(deriveStats(state, now), Object.keys(state.unlocked))
+      );
+      if (rank !== state.rankIndex) {
+        state = { ...state, rankIndex: rank };
+        changed = true;
+      }
+      if (!changed) break;
+    }
+    for (const id of ATTRIBUTE_IDS) {
+      const from = attributeProgress(before.attributeXp[id]).level;
+      const to = attributeProgress(state.attributeXp[id]).level;
+      if (to > from) {
+        events.push({ type: "attributeUp", attribute: id, from, to });
+        history.push({ id: newId("h"), at, type: "attributeUp", attribute: id, from, to });
+      }
+    }
+    events.push(...achievementEvents);
+    const levelBefore = levelFromXp(before.totalXp);
+    const levelAfter = levelFromXp(state.totalXp);
+    if (levelAfter > levelBefore) {
+      events.push({ type: "levelUp", from: levelBefore, to: levelAfter });
+      history.push({ id: newId("h"), at, type: "levelUp", from: levelBefore, to: levelAfter });
+    }
+    if (state.rankIndex > before.rankIndex) {
+      const from = RANKS[before.rankIndex].id;
+      const to = RANKS[state.rankIndex].id;
+      events.push({ type: "rankUp", from, to });
+      history.push({ id: newId("h"), at, type: "rankUp", from, to });
+    }
+    return { state: { ...state, history: [...state.history, ...history].slice(-300) }, events };
+  }
+  function starterMissions(now) {
+    const m = (input) => buildMission(input, now);
+    return [
+      m({ name: "Estudar por 1 hora", description: "Uma hora de estudo focado, sem distra\xE7\xF5es.", type: "daily", difficulty: "C", xp: REWARD_PRESETS.studyHour, attributes: ["inteligencia", "foco"], durationMin: 60 }),
+      m({ name: "Treinar", description: "Treino completo: muscula\xE7\xE3o, corrida ou esporte.", type: "daily", difficulty: "C", xp: REWARD_PRESETS.fullWorkout, attributes: ["forca", "vitalidade"] }),
+      m({ name: "Ler 20 p\xE1ginas", description: "Leitura com aten\xE7\xE3o plena.", type: "daily", difficulty: "D", xp: 30, attributes: ["foco", "inteligencia"] }),
+      m({ name: "Acordar no hor\xE1rio definido", description: "Levante sem adiar o alarme.", type: "daily", difficulty: "D", xp: REWARD_PRESETS.dailyHabit, attributes: ["disciplina", "vitalidade"] }),
+      m({ name: "Organizar o ambiente", description: "Deixe seu espa\xE7o pronto para evoluir.", type: "daily", difficulty: "E", xp: REWARD_PRESETS.simpleTask, attributes: ["disciplina"] }),
+      m({ name: "Treinar 4 vezes", description: "Complete quatro treinos nesta semana.", type: "weekly", difficulty: "C", xp: REWARD_PRESETS.weeklyMission, attributes: ["forca", "disciplina"], target: 4 }),
+      m({ name: "Completar 5 sess\xF5es de estudo", description: "Cinco sess\xF5es de estudo ao longo da semana.", type: "weekly", difficulty: "C", xp: REWARD_PRESETS.weeklyMission, attributes: ["inteligencia", "foco"], target: 5 }),
+      m({ name: "Concluir um projeto pessoal", description: "Um objetivo grande, dividido em passos. Defina o seu.", type: "special", difficulty: "B", xp: REWARD_PRESETS.specialMission, attributes: ["inteligencia", "disciplina"] })
+    ];
+  }
+  function createInitialState(name, now = /* @__PURE__ */ new Date()) {
+    return {
+      version: 1,
+      player: { name: name.trim() || "Jogador", avatar: "sigil-1", createdAt: now.toISOString() },
+      totalXp: 0,
+      attributeXp: emptyAttributeXp(),
+      rankIndex: 0,
+      missions: starterMissions(now),
+      completions: [],
+      unlocked: {},
+      history: []
+    };
+  }
+  var EMERGENCY_TEMPLATES = [
+    { name: "Alerta: caminhada rel\xE2mpago", description: "Saia e caminhe por 15 minutos nas pr\xF3ximas 24 horas.", difficulty: "D", xp: 90, attributes: ["vitalidade", "forca"] },
+    { name: "Alerta: foco total", description: "Fa\xE7a 25 minutos de trabalho profundo, sem celular.", difficulty: "C", xp: 110, attributes: ["foco", "disciplina"], durationMin: 25 },
+    { name: "Alerta: leitura expressa", description: "Leia 10 p\xE1ginas de um livro que voc\xEA escolheu.", difficulty: "D", xp: 80, attributes: ["foco", "inteligencia"] },
+    { name: "Alerta: conex\xE3o", description: "Envie uma mensagem sincera a algu\xE9m que voc\xEA valoriza.", difficulty: "D", xp: 80, attributes: ["carisma"] },
+    { name: "Alerta: reset de ambiente", description: "Organize sua mesa ou seu quarto por 10 minutos.", difficulty: "E", xp: 70, attributes: ["disciplina", "vitalidade"] }
+  ];
+  var EMERGENCY_COOLDOWN_HOURS = 72;
+  function maybeSpawnEmergency(state, now = /* @__PURE__ */ new Date(), rng = Math.random) {
+    if (state.completions.length < 3) return state;
+    if (state.missions.some((m) => m.type === "emergency" && m.status === "active" && !isMissionDone(m, now))) {
+      return state;
+    }
+    if (state.lastEmergencyAt) {
+      const hours = (now.getTime() - new Date(state.lastEmergencyAt).getTime()) / 36e5;
+      if (hours < EMERGENCY_COOLDOWN_HOURS) return state;
+    }
+    if (rng() > 0.6) return state;
+    const t = EMERGENCY_TEMPLATES[Math.floor(rng() * EMERGENCY_TEMPLATES.length) % EMERGENCY_TEMPLATES.length];
+    const mission = buildMission(
+      { ...t, type: "emergency", deadline: addDays(now, 1).toISOString() },
+      now
+    );
+    return { ...state, missions: [...state.missions, mission], lastEmergencyAt: now.toISOString() };
+  }
+  function verifyState(state, now = /* @__PURE__ */ new Date()) {
+    var _a;
+    const problems = [];
+    const achievementXp = Object.keys(state.unlocked).reduce(
+      (sum, id) => {
+        var _a2, _b;
+        return sum + ((_b = (_a2 = achievementById(id)) == null ? void 0 : _a2.rewardXp) != null ? _b : 0);
+      },
+      0
+    );
+    const expectedXp = state.completions.reduce((s, c) => s + c.xp, 0) + achievementXp;
+    if (expectedXp !== state.totalXp) {
+      problems.push(`XP total inconsistente: esperado ${expectedXp}, encontrado ${state.totalXp}.`);
+    }
+    const expectedAttr = emptyAttributeXp();
+    for (const c of state.completions) {
+      const split = splitXp(c.xp, c.attributes);
+      for (const id of ATTRIBUTE_IDS) expectedAttr[id] += (_a = split[id]) != null ? _a : 0;
+    }
+    for (const id of ATTRIBUTE_IDS) {
+      if (expectedAttr[id] !== state.attributeXp[id]) {
+        problems.push(`XP de ${id} inconsistente: esperado ${expectedAttr[id]}, encontrado ${state.attributeXp[id]}.`);
+      }
+    }
+    const eligible = evaluateRankIndex(deriveStats(state, now), Object.keys(state.unlocked));
+    if (state.rankIndex > eligible) problems.push("Rank acima do que os requisitos permitem.");
+    return { ok: problems.length === 0, problems };
+  }
+
+  // src/domain/selectors.ts
+  var xpToday = (state, now = /* @__PURE__ */ new Date()) => {
+    const today = dayKey(now);
+    return state.completions.filter((c) => c.day === today).reduce((s, c) => s + c.xp, 0);
+  };
+  function xpByDay(state, now = /* @__PURE__ */ new Date(), count = 7) {
+    var _a;
+    const totals = /* @__PURE__ */ new Map();
+    for (const c of state.completions) totals.set(c.day, ((_a = totals.get(c.day)) != null ? _a : 0) + c.xp);
+    return lastDays(now, count).map((day) => {
+      var _a2;
+      return { day, xp: (_a2 = totals.get(day)) != null ? _a2 : 0 };
+    });
+  }
+  var dailyMissions = (state) => state.missions.filter((m) => m.type === "daily");
+  function pendingMissions(state, now = /* @__PURE__ */ new Date()) {
+    return state.missions.filter(
+      (m) => m.status === "active" && !isMissionDone(m, now) && !isMissionExpired(m, now)
+    );
+  }
+  function pendingDaily(state, now = /* @__PURE__ */ new Date()) {
+    return pendingMissions(state, now).filter((m) => m.type === "daily");
+  }
+  function missionRatio(m, now = /* @__PURE__ */ new Date()) {
+    return Math.min(1, missionProgress(m, now) / m.target);
+  }
+  function nextAchievement(state, now = /* @__PURE__ */ new Date()) {
+    const stats = deriveStats(state, now);
+    const candidates = ACHIEVEMENTS.filter((a) => !state.unlocked[a.id]).map((def) => ({
+      def,
+      ...achievementProgress(def, stats)
+    }));
+    if (candidates.length === 0) return null;
+    return candidates.sort((a, b) => b.current / b.target - a.current / a.target)[0];
+  }
+  function nextRank(state, now = /* @__PURE__ */ new Date()) {
+    const next = RANKS[state.rankIndex + 1];
+    if (!next) return null;
+    return { rank: next, checks: checkRank(next, deriveStats(state, now), Object.keys(state.unlocked)) };
+  }
+  var playerLevel = (state) => levelProgress(state.totalXp);
+  return __toCommonJS(index_exports);
+})();
