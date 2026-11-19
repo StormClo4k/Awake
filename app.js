@@ -105,7 +105,7 @@
     for (var k = 0; k < rings; k++) ringHtml += '<i style="width:' + (100 - k * 16) + '%;height:' + (100 - k * 18) + '%"></i>';
     return '<div class="fig' + (o.locked ? ' locked' : '') + (o.still ? ' static' : '') + '" style="--c:' + color + ';--w:' + w + 'px;--p:' + p.toFixed(2) + '">' +
       '<div class="aura"></div><div class="rings">' + ringHtml + '</div>' +
-      '<img src="assets/forms/form-' + i + '.webp" alt="Personagem ' + esc(D.RANKS[i].name) + '" draggable="false"></div>';
+      '<img src="assets/forms/form-' + i + '.webp" data-n="' + i + '" alt="Personagem ' + esc(D.RANKS[i].name) + '" draggable="false"></div>';
   }
   function chip(label, on, data, color) {
     return '<button type="button" class="chip' + (on ? ' on' : '') + '" ' + (color ? 'style="--c:' + color + '" ' : '') + data + '>' + esc(label) + '</button>';
@@ -366,6 +366,15 @@
       if (fm && game) fm.scrollLeft = Math.max(0, game.rankIndex * 116 - 24);
     });
   }
+
+  /* Plano B para imagens: se não achar em assets/forms/, tenta forms/ e depois a raiz (upload sem a estrutura de pastas). */
+  document.addEventListener('error', function (ev) {
+    var img = ev.target;
+    if (!img || img.tagName !== 'IMG' || img.dataset.n === undefined) return;
+    var tries = [('forms/form-' + img.dataset.n + '.webp'), ('form-' + img.dataset.n + '.webp')];
+    var k = Number(img.dataset.try || 0);
+    if (k < tries.length) { img.dataset.try = k + 1; img.src = tries[k]; }
+  }, true);
 
   /* ------------------------------ eventos de interface ------------------------------ */
   document.addEventListener('click', function (ev) {
