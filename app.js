@@ -16,7 +16,7 @@
   var pad = function (n) { return String(n).padStart(2, '0'); };
   var dm = function (iso) { var d = new Date(iso); return pad(d.getDate()) + '/' + pad(d.getMonth() + 1); };
   var DIFF_COLOR = { E: '#8A94A6', D: '#5CC8A1', C: '#4DA3FF', B: '#A78BFA', A: '#F59E0B', S: '#EF4444' };
-  var TYPE_LABEL = { daily: 'Diária', weekly: 'Semanal', special: 'Especial', emergency: 'Emergência' };
+  var TYPE_LABEL = { daily: 'Diária', weekly: 'Semanal', special: 'Especial', emergency: 'Emergência', boss: 'Chefe' };
   var WEEKDAY = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
   var MESSAGES = [
     'Você ultrapassou seu limite anterior.', 'O sistema reconhece sua evolução.',
@@ -36,42 +36,88 @@
   var game = null;
   var now = new Date();
   var storageOk = true;
+  var lastError = null;
+  var journalDraft = null, journalMood = null;
+  var SKEY = 'awakening-settings-v1', SNAPKEY = 'awakening-snapshots-v1';
+  /** Ajustes do aparelho (tema, lembretes, backup). Ficam fora do progresso do jogo. */
+  var S = { theme: 'classic', remindOn: false, remindTime: '20:00', backupEvery: 7, lastBackup: null, backupSnooze: null, lastRemind: null, focus: null };
+  var renderHooks = [];
+
+  function loadSettings() { try { var raw = localStorage.getItem(SKEY); if (raw) Object.assign(S, JSON.parse(raw)); } catch (e) {} }
+  function saveSettings() { try { localStorage.setItem(SKEY, JSON.stringify(S)); } catch (e) {} }
 
   function load() {
     try {
       var raw = localStorage.getItem(KEY);
       if (!raw) return;
       var data = JSON.parse(raw);
-      game = (data && data.state && data.state.game) || null;
+      var g = (data && data.state && data.state.game) || null;
+      game = g ? D.normalizeState(g) : null;
     } catch (e) { game = null; }
   }
+  /** Guarda uma cópia do estado anterior (uma por dia, as 6 últimas) para poder voltar atrás. */
+  function takeSnapshot(raw, label, force) {
+    try {
+      var list = JSON.parse(localStorage.getItem(SNAPKEY) || '[]'), today = D.dayKey(new Date());
+      if (!force && list.some(function (x) { return x.day === today; })) return;
+      list.push({ day: today, at: new Date().toISOString(), label: label || 'automático', raw: raw });
+      while (list.length > 6) list.shift();
+      localStorage.setItem(SNAPKEY, JSON.stringify(list));
+    } catch (e) {}
+  }
   function save() {
-    try { localStorage.setItem(KEY, JSON.stringify({ state: { game: game }, version: 1 })); storageOk = true; }
-    catch (e) { storageOk = false; }
+    try {
+      var prev = localStorage.getItem(KEY);
+      if (prev) takeSnapshot(prev);
+      localStorage.setItem(KEY, JSON.stringify({ state: { game: game }, version: 1 }));
+      storageOk = true;
+    } catch (e) { storageOk = false; }
   }
   function refresh() {
     if (!game) return;
     now = new Date();
-    game = D.maybeSpawnEmergency(D.expireMissions(game, now), now);
-    save();
+    var g = D.maybeSpawnBoss(D.maybeSpawnEmergency(D.expireMissions(game, now), now), now);
+    var u = D.updateSeason(g, now);
+    game = u.state; save();
+    if (u.events.length) handleEvents(u.events);
   }
-  function apply(run) {
-    if (!game) return;
+  /** Executa uma mudança no jogo. `run` devolve { state, events, error }. Retorna true se aplicou. */
+  function apply(run, silent) {
+    if (!game) return false;
+    now = new Date();
     var r = run(game);
-    game = r.state; save();
-    if (r.events && r.events.length) handleEvents(r.events);
+    lastError = r.error || null;
+    if (r.error) {
+      if (!silent) showToast('<div class="t1" style="color:var(--danger)">' + esc(r.error) + '</div>');
+      return false;
+    }
+    game = r.state;
+    var u = D.updateSeason(game, now);
+    game = u.state;
+    save();
+    var evs = (r.events || []).concat(u.events);
+    if (evs.length) handleEvents(evs);
     render();
+    return true;
   }
+  function setGame(g) { game = g ? D.normalizeState(g) : null; if (game) save(); render(); }
   var act = {
-    start: function (name) { game = D.createInitialState((name || '').trim() || 'Jogador'); save(); location.hash = '#/'; },
+    start: function (name) { game = D.createInitialState((name || '').trim() || 'Jogador'); save(); location.hash = '#/'; render(); },
     progress: function (id) { apply(function (g) { return D.addProgress(g, id, 1); }); },
     complete: function (id) { apply(function (g) { return D.completeMission(g, id); }); },
     remove: function (id) { apply(function (g) { return { state: D.removeMission(g, id), events: [] }; }); },
-    create: function (input) { apply(function (g) { return { state: D.addMission(g, input), events: [] }; }); },
+    create: function (input) { return apply(function (g) { return { state: D.addMission(g, input), events: [] }; }); },
+    update: function (id, patch) { return apply(function (g) { return D.updateMission(g, id, patch); }, true); },
+    undo: function (id) { if (apply(function (g) { return D.undoCompletion(g, id); })) showToast('<div class="t1">Conclusão desfeita</div>'); },
+    rest: function () { apply(function (g) { return D.toggleRestDay(g); }); },
+    journal: function (text, mood) {
+      journalDraft = null; journalMood = null;
+      if (apply(function (g) { return D.saveJournal(g, { text: text, mood: mood }); })) showToast('<div class="t1">Anotação salva</div>');
+    },
     rename: function (name) {
       apply(function (g) { return { state: Object.assign({}, g, { player: Object.assign({}, g.player, { name: name.trim() || g.player.name }) }), events: [] }; });
     },
-    reset: function () { game = null; try { localStorage.removeItem(KEY); } catch (e) {} location.hash = '#/'; }
+    reset: function () { game = null; try { localStorage.removeItem(KEY); } catch (e) {} location.hash = '#/'; render(); }
   };
 
   /* ------------------------------ componentes ------------------------------ */
@@ -116,22 +162,46 @@
       '</span><span class="lv" style="color:' + def.color + '">Nv. ' + p.level + '</span></div>' + bar(p.ratio, def.color, detailed ? 8 : 6) +
       (detailed ? '<div class="sub">' + (p.isMax ? 'Nível máximo' : p.xpIntoLevel + '/' + p.xpForNext + ' XP') + ' · ' + esc(def.description) + '</div>' : '') + '</div>';
   }
+  var DAYS3 = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+  var MOODS = ['😞', '😕', '😐', '🙂', '😄'];
+  function todaysCompletion(id) {
+    var t = D.dayKey(now), found = null;
+    game.completions.forEach(function (c) { if (c.missionId === id && c.day === t) found = c; });
+    return found;
+  }
+  function bossCard(m) {
+    var cur = D.missionProgress(m, now), done = D.isMissionDone(m, now), expired = D.isMissionExpired(m, now), left = Math.max(0, m.target - cur);
+    var color = done ? 'var(--success)' : expired ? 'var(--mute)' : 'var(--danger)';
+    return panel('Chefe semanal', '<div class="mission boss" data-mid="' + m.id + '"><div class="nm">☠ ' + esc(m.name.replace(/^Chefe: /, '')) + '</div><div class="ds">' + esc(m.description) + '</div>' +
+      '<div style="margin-top:12px">' + bar(left / m.target, color, 12) + '<div class="xp-row"><span>' + (done ? 'DERROTADO' : expired ? 'ESCAPOU' : 'Vida: ' + left + ' / ' + m.target) +
+      '</span><span class="xp">Recompensa +' + m.xp + ' XP</span></div></div>' +
+      (!done && !expired && m.deadline ? '<div class="xp-row"><span>' + deadlineText(m.deadline, now) + '</span><span></span></div>' : '') + '</div>',
+      { accent: color, cls: done || expired ? 'dimmed' : '' });
+  }
   function missionCard(m) {
-    var done = D.isMissionDone(m, now), expired = D.isMissionExpired(m, now), cur = D.missionProgress(m, now);
+    if (m.type === 'boss') return bossCard(m);
+    var done = D.isMissionDone(m, now), expired = D.isMissionExpired(m, now), cur = D.missionProgress(m, now), sched = D.isMissionScheduled(m, now);
     var accent = m.type === 'emergency' ? 'var(--danger)' : done ? 'var(--success)' : 'var(--accent)';
     var attrs = m.attributes.map(function (a) { return '<span class="tag">' + esc(D.ATTRIBUTES[a].glyph + ' ' + D.ATTRIBUTES[a].short) + '</span>'; }).join('');
     var progress = m.target > 1 ? '<div style="margin-top:10px">' + bar(cur / m.target, accent === 'var(--accent)' ? 'var(--accent)' : accent, 6) +
       '<div class="xp-row"><span>' + cur + '/' + m.target + ' etapas</span></div></div>' : '';
-    var action = done ? '<p class="status">✓ CONCLUÍDA</p>' : expired ? '<p class="status" style="color:var(--danger)">✕ EXPIRADA</p>' :
-      m.target > 1 ? '<button class="btn" data-act="progress" data-id="' + m.id + '">+1 etapa</button>' : '<button class="btn" data-act="complete" data-id="' + m.id + '">Concluir missão</button>';
+    var comp = done ? todaysCompletion(m.id) : null;
+    var days = m.days && m.days.length ? '<span>' + m.days.map(function (d) { return DAYS3[d]; }).join(' · ') + '</span>' : '';
+    var action = done ? '<p class="status">✓ CONCLUÍDA</p>' + (comp ? '<button class="btn ghost small" style="margin-top:8px" data-act="undo" data-id="' + comp.id + '">↶ Desfazer</button>' : '')
+      : expired ? '<p class="status" style="color:var(--danger)">✕ EXPIRADA</p>'
+      : !sched ? '<p class="status" style="color:var(--mute)">FOLGA HOJE</p>'
+      : '<div class="actions">' + (m.target > 1 ? '<button class="btn" data-act="progress" data-id="' + m.id + '">+1 etapa</button>' : '<button class="btn" data-act="complete" data-id="' + m.id + '">Concluir missão</button>') +
+        '<button class="btn ghost focus-btn" data-act="focus" data-id="' + m.id + '" title="Sessão de foco (F)" aria-label="Sessão de foco">◉ Focar</button></div>';
     return panel(null,
       '<button class="del" title="Remover missão" aria-label="Remover missão" data-act="remove" data-id="' + m.id + '" data-name="' + esc(m.name) + '">✕</button>' +
-      '<div class="mission"><div class="top"><div style="flex:1;min-width:0"><div class="nm">' + esc(m.name) + '</div>' + (m.description ? '<div class="ds">' + esc(m.description) + '</div>' : '') +
+      '<a class="edit" href="#/edit/' + m.id + '" title="Editar missão" aria-label="Editar missão">✎</a>' +
+      '<div class="mission" data-mid="' + m.id + '"><div class="top"><div style="flex:1;min-width:0"><div class="nm">' + esc(m.name) + '</div>' + (m.description ? '<div class="ds">' + esc(m.description) + '</div>' : '') +
       '</div><div class="diff" style="color:' + DIFF_COLOR[m.difficulty] + ';border-color:' + DIFF_COLOR[m.difficulty] + '">' + m.difficulty + '</div></div>' +
-      '<div class="meta"><span class="xp">+' + m.xp + ' XP</span><span>' + TYPE_LABEL[m.type] + '</span>' +
+      '<div class="meta"><span class="xp">+' + m.xp + ' XP</span><span>' + TYPE_LABEL[m.type] + '</span>' + days +
+      (m.durationMin ? '<span>' + m.durationMin + ' min</span>' : '') +
       (m.deadline && !done ? '<span style="color:' + (expired ? 'var(--danger)' : 'var(--gold)') + '">' + deadlineText(m.deadline, now) + '</span>' : '') + '</div>' +
       '<div style="margin-top:8px">' + attrs + '</div>' + progress + '<div style="margin-top:12px">' + action + '</div></div>',
-      { accent: accent, cls: done || expired ? 'dimmed' : '' });
+      { accent: accent, cls: done || expired || !sched ? 'dimmed' : '' });
   }
 
   /* ------------------------------ telas ------------------------------ */
@@ -144,14 +214,42 @@
       '<p class="foot">Rank E · Nível 1 · O caminho até o MONARCA começa aqui.</p></div>';
   }
 
+  function daysSince(iso) { return iso ? (Date.now() - new Date(iso).getTime()) / 86400000 : Infinity; }
+  function banners() {
+    var out = '';
+    if (!storageOk) out += panel(null, '<p class="error small" style="margin:0">Não foi possível salvar neste navegador (modo privado?). O progresso será perdido ao fechar.</p>', { accent: 'var(--danger)' });
+    var snoozed = S.backupSnooze && new Date(S.backupSnooze).getTime() > Date.now();
+    var since = daysSince(S.lastBackup || game.player.createdAt);
+    if (S.backupEvery > 0 && !snoozed && game.completions.length > 0 && since >= S.backupEvery) {
+      out += panel('Backup', '<p style="margin:0 0 12px;color:var(--dim)">' + (S.lastBackup ? 'Faz ' + Math.floor(since) + ' dias desde o último backup.' : 'Você ainda não fez backup do seu progresso.') +
+        ' Se os dados do navegador forem apagados, tudo se perde.</p><div class="row2"><button class="btn" data-act="backup-now">Exportar agora</button><button class="btn ghost" data-act="backup-snooze">Lembrar amanhã</button></div>', { accent: 'var(--gold)' });
+    }
+    return out;
+  }
+  function seasonMini() {
+    var p = D.seasonProgress(game, now);
+    if (!p) return '';
+    return panel('Temporada · ' + p.season.name,
+      bar(p.xp / p.season.goalXp, 'var(--gold)', 8) + '<div class="xp-row"><span>' + Math.min(p.xp, p.season.goalXp) + ' / ' + p.season.goalXp + ' XP</span><span>' + p.activeDays + '/' + D.SEASON_DAYS_GOAL + ' dias · faltam ' + p.daysLeft + '</span></div>' +
+      '<a class="small" style="color:var(--glow);display:inline-block;margin-top:8px" href="#/stats">Ver detalhes</a>', { accent: 'var(--gold)' });
+  }
   function viewDashboard() {
     var rank = D.RANKS[game.rankIndex], lvl = D.levelProgress(game.totalXp), pending = D.pendingDaily(game, now);
+    var frameIdx = game.player.frame != null ? game.player.frame : game.rankIndex, frameColor = D.RANKS[frameIdx].color;
+    var title = D.currentTitle(game), today = D.dayKey(now), isRest = (game.restDays || []).indexOf(today) >= 0;
     var week = D.xpByDay(game, now, 7), weekTotal = week.reduce(function (s, d) { return s + d.xp; }, 0);
     var maxDay = Math.max.apply(null, [1].concat(week.map(function (d) { return d.xp; })));
     var weekly = game.missions.filter(function (m) { return m.type === 'weekly' && m.status === 'active'; });
     var weeklyDone = weekly.filter(function (m) { return D.isMissionDone(m, now); }).length;
     var next = D.nextAchievement(game, now);
-    var html = '<div><div class="greet">' + greeting(now.getHours()) + ',</div><h1 class="name">' + esc(game.player.name) + '.</h1></div>';
+    var boss = game.missions.filter(function (m) { return m.type === 'boss' && m.progress.periodKey === D.weekKey(now); })[0];
+    var doneToday = game.completions.filter(function (c) { return c.day === today && c.kind !== 'boss'; });
+    var entry = (game.journal || []).filter(function (j) { return j.day === today; })[0];
+    var jt = journalDraft != null ? journalDraft : (entry ? entry.text : ''), jm = journalMood != null ? journalMood : (entry && entry.mood) || 0;
+    var html = '<div class="hdr"><div style="min-width:0"><div class="greet">' + greeting(now.getHours()) + ',</div><h1 class="name">' + esc(game.player.name) + '.</h1>' +
+      (title ? '<div class="ttl" style="color:' + title.color + '">' + esc(title.label) + '</div>' : '') + '</div>' +
+      '<div class="hdr-r"><a class="coins" href="#/store" title="Suas moedas — abrir a loja">◆ ' + D.coinBalance(game) + '</a><a class="gear" href="#/settings" aria-label="Ajustes e backup" title="Ajustes e backup">⚙</a></div></div>';
+    html += banners();
 
     html += panel('Status',
       '<div class="hero">' + figure(game.rankIndex, lvl.level, rank.color, 300) +
@@ -160,14 +258,30 @@
       '<p class="rank-name" style="color:' + rank.color + '">' + esc(rank.name) + '</p><p class="rank-sub">' + esc(rank.description) + '</p>' +
       '<div style="margin-top:16px">' + bar(lvl.ratio, 'var(--glow)', 10) + '<div class="xp-row"><span>' +
       (lvl.isMax ? 'NÍVEL MÁXIMO' : lvl.xpIntoLevel + ' / ' + lvl.xpForNext + ' XP') + '</span><span style="color:var(--success)">Hoje +' + D.xpToday(game, now) + ' XP</span></div></div>',
-      { accent: rank.color });
+      { accent: frameColor });
 
+    if (boss) html += bossCard(boss);
+    html += seasonMini();
     html += panel('Atributos', '<div class="attr-grid">' + D.ATTRIBUTE_IDS.map(function (id) { return attrRow(id, game.attributeXp[id], false); }).join('') + '</div>');
 
-    html += '<div class="stack"><div class="section"><b>MISSÕES DE HOJE</b><span class="dim small" style="font-weight:700">' + pending.length + ' pendentes</span></div>' +
-      (pending.length === 0 ? panel(null, '<p style="margin:0;color:var(--success);font-weight:600">Todas as missões diárias foram concluídas. Descanse, você mereceu.</p>', { accent: 'var(--success)' })
+    html += '<div class="stack"><div class="section"><b>MISSÕES DE HOJE</b><span class="dim small" style="font-weight:700">' + (isRest ? 'descanso' : pending.length + ' pendentes') + '</span></div>' +
+      (isRest ? panel(null, '<p style="margin:0 0 12px;color:var(--glow);font-weight:600">Hoje é dia de descanso. Sua sequência está protegida e nada é cobrado. Se mudar de ideia, qualquer missão ainda vale XP.</p><button class="btn ghost" data-act="rest">Cancelar descanso</button>', { accent: 'var(--glow)' }) : '') +
+      (pending.length === 0 && !isRest ? panel(null, '<p style="margin:0;color:var(--success);font-weight:600">Todas as missões diárias foram concluídas. Descanse, você mereceu.</p>', { accent: 'var(--success)' })
         : pending.slice(0, 3).map(missionCard).join('')) +
-      '<a class="btn ghost" style="text-decoration:none" href="#/missions">' + (pending.length > 3 ? 'Ver todas as missões (+' + (pending.length - 3) + ')' : 'Ir para as missões') + '</a></div>';
+      '<a class="btn ghost" style="text-decoration:none" href="#/missions">' + (pending.length > 3 ? 'Ver todas as missões (+' + (pending.length - 3) + ')' : 'Ir para as missões') + '</a>' +
+      (!isRest && doneToday.length === 0 ? '<button class="btn ghost small" data-act="rest" title="Protege a sequência sem cobrar missões (até 2 por semana)">Hoje é dia de descanso</button>' : '') + '</div>';
+
+    if (doneToday.length) {
+      html += panel('Concluídas hoje', '<div class="stack" style="gap:8px">' + doneToday.slice().reverse().map(function (c) {
+        return '<div class="done-row"><span class="ok">✓</span><span style="flex:1;min-width:0">' + esc(c.missionName) + '</span><span class="xp">+' + c.xp + '</span>' +
+          '<button class="mini" data-act="undo" data-id="' + c.id + '" title="Desfazer" aria-label="Desfazer ' + esc(c.missionName) + '">↶</button></div>';
+      }).join('') + '</div>', { accent: 'var(--success)' });
+    }
+
+    html += panel('Diário de hoje', '<textarea id="journal-text" class="input" maxlength="280" placeholder="Como foi o dia? Uma frase basta.">' + esc(jt) + '</textarea>' +
+      '<div class="row" style="margin-top:10px" role="group" aria-label="Como você se sentiu">' + MOODS.map(function (m, i) {
+        return chip(m, jm === i + 1, 'data-act="mood" data-id="' + (i + 1) + '" aria-label="Humor ' + (i + 1) + ' de 5"');
+      }).join('') + '</div><div style="margin-top:12px"><button class="btn" data-act="journal-save">' + (entry ? 'Atualizar anotação' : 'Salvar anotação') + '</button></div>');
 
     html += panel('Progresso semanal',
       '<div class="weekbars">' + week.map(function (d, i) {
@@ -185,16 +299,17 @@
 
   var tab = 'daily';
   function viewMissions() {
-    var rk = function (m) { return D.isMissionExpired(m, now) ? 2 : D.isMissionDone(m, now) ? 1 : 0; };
-    var types = ['daily', 'weekly', 'special', 'emergency'];
+    var rk = function (m) { return D.isMissionExpired(m, now) ? 2 : D.isMissionDone(m, now) ? 1 : !D.isMissionScheduled(m, now) ? 1 : 0; };
+    var types = ['daily', 'weekly', 'special', 'emergency', 'boss'];
     var list = game.missions.filter(function (m) { return m.type === tab; }).sort(function (a, b) { return rk(a) - rk(b); });
     var html = '<h1 class="screen-title">MISSÕES</h1><div class="row">' + types.map(function (t) {
       var n = game.missions.filter(function (m) { return m.type === t && rk(m) === 0; }).length;
-      return chip(n > 0 ? TYPE_LABEL[t] + ' · ' + n : TYPE_LABEL[t], tab === t, 'data-act="tab" data-id="' + t + '"', t === 'emergency' ? 'var(--danger)' : null);
+      return chip(n > 0 ? TYPE_LABEL[t] + ' · ' + n : TYPE_LABEL[t], tab === t, 'data-act="tab" data-id="' + t + '"', t === 'emergency' || t === 'boss' ? 'var(--danger)' : null);
     }).join('') + '</div><a class="btn ghost" style="text-decoration:none" href="#/new">+ Nova missão</a>';
-    html += list.length === 0
-      ? panel(null, '<p class="dim" style="margin:0;line-height:1.4">' + (tab === 'emergency' ? 'Nenhum alerta ativo. De vez em quando o sistema lança desafios inesperados com prazo de 24 horas.' : 'Nenhuma missão nesta categoria. Crie a sua!') + '</p>')
-      : list.map(missionCard).join('');
+    var empty = tab === 'emergency' ? 'Nenhum alerta ativo. De vez em quando o sistema lança desafios inesperados com prazo de 24 horas.'
+      : tab === 'boss' ? 'Todo começo de semana um chefe aparece, depois que você concluir suas primeiras missões. Cada missão concluída causa dano igual ao seu XP.'
+      : 'Nenhuma missão nesta categoria. Crie a sua!';
+    html += list.length === 0 ? panel(null, '<p class="dim" style="margin:0;line-height:1.4">' + empty + '</p>') : list.map(missionCard).join('');
     return html;
   }
 
@@ -207,15 +322,25 @@
     }
     return '';
   }
+  function titlesPanel() {
+    var titles = D.availableTitles(game), cur = game.player.title, fr = game.player.frame;
+    return panel('Título e moldura', '<p class="label">TÍTULO</p><div class="row">' + chip('Nenhum', !cur, 'data-act="title" data-id=""') +
+      titles.map(function (t) { return chip(t.label, cur === t.id, 'data-act="title" data-id="' + esc(t.id) + '"', t.color); }).join('') +
+      '</div><p class="label" style="margin-top:16px">MOLDURA (COR DA JANELA)</p><div class="row">' + chip('Automática', fr == null, 'data-act="frame" data-id=""') +
+      D.RANKS.slice(0, game.rankIndex + 1).map(function (r, i) { return chip(r.id, fr === i, 'data-act="frame" data-id="' + i + '"', r.color); }).join('') + '</div>');
+  }
   function viewCharacter() {
     var rank = D.RANKS[game.rankIndex], lvl = D.levelProgress(game.totalXp), stats = D.deriveStats(game, now), up = D.nextRank(game, now);
+    var frameColor = D.RANKS[game.player.frame != null ? game.player.frame : game.rankIndex].color, curTitle = D.currentTitle(game);
     var html = panel('Personagem',
       '<div style="display:flex;flex-direction:column;align-items:center;gap:4px">' + figure(game.rankIndex, lvl.level, rank.color, 290) +
       '<input id="char-name" class="name-input" maxlength="24" value="' + esc(game.player.name) + '" aria-label="Nome do personagem" />' +
       '<div style="font-family:var(--display);font-size:12px;letter-spacing:1.5px;color:' + rank.color + '">' + esc(rank.name) + ' · ' + esc(rank.title) + '</div>' +
+      (curTitle ? '<div style="font-weight:700;letter-spacing:1px;color:' + curTitle.color + '">' + esc(curTitle.label) + '</div>' : '') +
       '<div class="dim" style="font-weight:600">Nível ' + lvl.level + ' · ' + game.totalXp + ' XP</div>' +
-      '<div id="save-name" class="hidden" style="align-self:stretch;margin-top:10px"><button class="btn" data-act="rename">Salvar nome</button></div></div>', { accent: rank.color });
+      '<div id="save-name" class="hidden" style="align-self:stretch;margin-top:10px"><button class="btn" data-act="rename">Salvar nome</button></div></div>', { accent: frameColor });
 
+    html += titlesPanel();
     html += panel('Atributos', '<div class="stack" style="gap:18px">' + D.ATTRIBUTE_IDS.map(function (id) { return attrRow(id, game.attributeXp[id], true); }).join('') + '</div>');
 
     var forms = D.RANKS.map(function (r, i) {
@@ -246,57 +371,94 @@
     var history = game.history.slice().reverse().slice(0, 12);
     html += panel('Histórico de evolução', history.length === 0 ? '<p class="dim" style="margin:0">Sua história começa na primeira missão concluída.</p>' :
       '<div class="stack" style="gap:8px">' + history.map(function (e) { return '<div class="hist"><span class="dt">' + dm(e.at) + '</span><span>' + esc(describeEvent(e)) + '</span></div>'; }).join('') + '</div>');
-    html += '<button class="btn danger" data-act="reset">Reiniciar jornada</button>';
+    if ((game.seasonBadges || []).length) {
+      html += panel('Insígnias de temporada', '<div class="row">' + game.seasonBadges.map(function (b) { return '<span class="tag" style="color:var(--gold);border-color:var(--gold)">★ ' + esc(b.name) + '</span>'; }).join('') + '</div>', { accent: 'var(--gold)' });
+    }
+    html += '<div class="stack"><button class="btn" data-act="share-card">Cartão do personagem</button><a class="btn ghost" style="text-decoration:none" href="#/settings">Ajustes e backup</a>' +
+      '<button class="btn danger" data-act="reset">Reiniciar jornada</button></div>';
     if (!storageOk) html += '<p class="error small" style="text-align:center">Não foi possível salvar neste navegador (modo privado?). O progresso será perdido ao fechar.</p>';
     return html;
   }
 
-  /* ------------------------------ nova missão ------------------------------ */
+  /* ------------------------------ nova missão / editar ------------------------------ */
   var form = null;
   var DURATIONS = [0, 15, 30, 60, 90];
   var DEADLINES = [{ l: 'Sem prazo', d: null }, { l: '7 dias', d: 7 }, { l: '30 dias', d: 30 }, { l: '90 dias', d: 90 }];
+  var TEMPLATES = [
+    { n: 'Treino', d: 'Treino completo do dia.', t: 'daily', f: 'C', xp: 60, a: ['forca', 'vitalidade'] },
+    { n: 'Estudar 1 hora', d: 'Estudo focado, sem distrações.', t: 'daily', f: 'C', xp: 50, a: ['inteligencia', 'foco'], dur: 60 },
+    { n: 'Leitura', d: 'Ler 20 páginas com atenção plena.', t: 'daily', f: 'D', xp: 30, a: ['foco', 'inteligencia'], dur: 30 },
+    { n: 'Meditar 15 min', d: 'Respiração e silêncio.', t: 'daily', f: 'E', xp: 15, a: ['foco', 'vitalidade'], dur: 15 },
+    { n: 'Beber 2 L de água', d: '', t: 'daily', f: 'E', xp: 10, a: ['vitalidade'] },
+    { n: 'Dormir cedo', d: 'Na cama no horário combinado.', t: 'daily', f: 'D', xp: 25, a: ['vitalidade', 'disciplina'] },
+    { n: 'Caminhada', d: '30 minutos ao ar livre.', t: 'daily', f: 'D', xp: 30, a: ['vitalidade', 'forca'], dur: 30 },
+    { n: 'Treino seg · qua · sex', d: 'Treino nos dias fixos da semana.', t: 'daily', f: 'C', xp: 60, a: ['forca', 'disciplina'], days: [1, 3, 5] },
+    { n: 'Organizar a semana', d: 'Planejar compromissos e prioridades.', t: 'weekly', f: 'D', xp: 100, a: ['disciplina', 'foco'] },
+    { n: 'Treinar 3 vezes', d: 'Três treinos nesta semana.', t: 'weekly', f: 'C', xp: 200, a: ['forca', 'disciplina'], target: 3 }
+  ];
   function newForm() {
-    return { name: '', description: '', type: 'daily', difficulty: 'C', xp: String(D.suggestedXp('daily', 'C')), xpEdited: false, attrs: [], target: 1, duration: 0, deadlineDays: null, error: null };
+    return { editId: null, name: '', description: '', type: 'daily', difficulty: 'C', xp: String(D.suggestedXp('daily', 'C')), xpEdited: false, attrs: [], target: 1, duration: 0, deadlineDays: null, days: [], error: null };
+  }
+  function formFromMission(m) {
+    return { editId: m.id, name: m.name, description: m.description || '', type: m.type, difficulty: m.difficulty, xp: String(m.xp), xpEdited: true, attrs: m.attributes.slice(),
+      target: m.target, duration: m.durationMin || 0, deadlineDays: null, days: (m.days || []).slice(), error: null };
+  }
+  function applyTemplate(i) {
+    var t = TEMPLATES[i]; if (!t) return;
+    Object.assign(form, { name: t.n, description: t.d || '', type: t.t, difficulty: t.f, xp: String(t.xp), xpEdited: true, attrs: t.a.slice(), target: t.target || 1, duration: t.dur || 0, days: (t.days || []).slice(), deadlineDays: null, error: null });
   }
   function suggest() { if (!form.xpEdited) form.xp = String(D.suggestedXp(form.type, form.difficulty)); }
   function viewNew() {
-    if (!form) form = newForm();
-    var f = form;
-    return '<div class="between"><h1 class="screen-title">NOVA MISSÃO</h1><a class="close" href="#/missions" aria-label="Fechar" style="text-decoration:none;color:var(--dim)">✕</a></div>' +
+    var r = route(), editing = r.indexOf('#/edit/') === 0 ? game.missions.filter(function (x) { return x.id === r.slice(7); })[0] : null;
+    if (r.indexOf('#/edit/') === 0 && !editing) { location.hash = '#/missions'; return ''; }
+    if (editing && (!form || form.editId !== editing.id)) form = formFromMission(editing);
+    else if (!editing && (!form || form.editId)) form = newForm();
+    var f = form, isEdit = !!f.editId;
+    var durs = DURATIONS.indexOf(f.duration) < 0 ? DURATIONS.concat(f.duration) : DURATIONS;
+    return '<div class="between"><h1 class="screen-title">' + (isEdit ? 'EDITAR MISSÃO' : 'NOVA MISSÃO') + '</h1><a class="close" href="#/missions" aria-label="Fechar" style="text-decoration:none;color:var(--dim)">✕</a></div>' +
+      (isEdit ? '' : panel('Modelos', '<div class="row">' + TEMPLATES.map(function (t, i) { return chip(t.n, false, 'data-act="f-tpl" data-id="' + i + '"'); }).join('') + '</div><p class="help">Toque em um modelo para preencher o formulário e ajuste o que quiser.</p>')) +
       panel('Detalhes', '<p class="label">NOME</p><input class="input" data-field="name" maxlength="60" placeholder="Ex.: Estudar JavaScript" value="' + esc(f.name) + '" />' +
         '<p class="label" style="margin-top:16px">DESCRIÇÃO (OPCIONAL)</p><textarea class="input" data-field="description" maxlength="160" placeholder="O que precisa ser feito?">' + esc(f.description) + '</textarea>') +
-      panel('Tipo e dificuldade', '<div class="row">' + ['daily', 'weekly', 'special'].map(function (t) { return chip(TYPE_LABEL[t], f.type === t, 'data-act="f-type" data-id="' + t + '"'); }).join('') + '</div>' +
+      panel('Tipo e dificuldade', '<div class="row">' + (isEdit ? chip(TYPE_LABEL[f.type], true, 'disabled') : ['daily', 'weekly', 'special'].map(function (t) { return chip(TYPE_LABEL[t], f.type === t, 'data-act="f-type" data-id="' + t + '"'); }).join('')) + '</div>' +
+        (f.type === 'daily' ? '<p class="label" style="margin-top:16px">DIAS DA SEMANA</p><div class="row">' + DAYS3.map(function (d, i) { return chip(d, f.days.indexOf(i) >= 0, 'data-act="f-day" data-id="' + i + '"'); }).join('') + '</div><p class="help">Sem nenhum dia marcado, a missão vale todos os dias. Nos outros dias ela fica de folga.</p>' : '') +
         '<p class="label" style="margin-top:16px">DIFICULDADE</p><div class="row">' + ['E', 'D', 'C', 'B', 'A', 'S'].map(function (d) { return chip(d, f.difficulty === d, 'data-act="f-diff" data-id="' + d + '"', DIFF_COLOR[d]); }).join('') + '</div>' +
-        (f.type === 'special' ? '<p class="label" style="margin-top:16px">PRAZO</p><div class="row">' + DEADLINES.map(function (d) { return chip(d.l, f.deadlineDays === d.d, 'data-act="f-deadline" data-id="' + d.d + '"'); }).join('') + '</div>' : '')) +
+        (f.type === 'special' && !isEdit ? '<p class="label" style="margin-top:16px">PRAZO</p><div class="row">' + DEADLINES.map(function (d) { return chip(d.l, f.deadlineDays === d.d, 'data-act="f-deadline" data-id="' + d.d + '"'); }).join('') + '</div>' : '')) +
       panel('Recompensa', '<p class="label">XP (1 A ' + D.MAX_MISSION_XP + ')</p><input class="input" data-field="xp" inputmode="numeric" maxlength="4" value="' + esc(f.xp) + '" style="font-weight:700" />' +
         '<p class="help">Sugestão para o tipo e a dificuldade escolhidos: ' + D.suggestedXp(f.type, f.difficulty) + ' XP.</p>' +
         '<p class="label" style="margin-top:16px">ATRIBUTOS BENEFICIADOS</p><div class="row">' + D.ATTRIBUTE_IDS.map(function (id) {
           return chip(D.ATTRIBUTES[id].glyph + ' ' + D.ATTRIBUTES[id].name, f.attrs.indexOf(id) >= 0, 'data-act="f-attr" data-id="' + id + '"', D.ATTRIBUTES[id].color);
         }).join('') + '</div>') +
       panel('Meta', '<p class="label">ETAPAS PARA CONCLUIR</p><div class="stepper"><button type="button" data-act="f-dec" aria-label="Menos">−</button><b>' + f.target + '</b><button type="button" data-act="f-inc" aria-label="Mais">+</button></div>' +
-        '<p class="help">Ex.: “Treinar 4 vezes” = 4 etapas. O XP só é pago ao completar todas.</p>' +
-        '<p class="label" style="margin-top:16px">DURAÇÃO (MIN)</p><div class="row">' + DURATIONS.map(function (d) { return chip(d === 0 ? 'Nenhuma' : String(d), f.duration === d, 'data-act="f-dur" data-id="' + d + '"'); }).join('') + '</div>' +
+        '<p class="help">Ex.: “Treinar 4 vezes” = 4 etapas. O XP só é pago ao completar todas.' + (isEdit ? ' A meta só muda se não houver etapas feitas neste período.' : '') + '</p>' +
+        '<p class="label" style="margin-top:16px">DURAÇÃO (MIN)</p><div class="row">' + durs.map(function (d) { return chip(d === 0 ? 'Nenhuma' : String(d), f.duration === d, 'data-act="f-dur" data-id="' + d + '"'); }).join('') + '</div>' +
         '<p class="help">Missões de Inteligência com duração somam nas horas de estudo.</p>') +
       (f.error ? '<p class="error">' + esc(f.error) + '</p>' : '') +
-      '<button class="btn" data-act="f-save">Criar missão</button>';
+      '<button class="btn" data-act="f-save">' + (isEdit ? 'Salvar alterações' : 'Criar missão') + '</button>';
   }
   function saveForm() {
     var f = form, xp = parseInt(f.xp, 10);
     var input = {
       name: f.name, description: f.description, type: f.type, difficulty: f.difficulty, xp: isFinite(xp) ? xp : undefined, attributes: f.attrs, target: f.target,
-      durationMin: f.duration || undefined,
+      durationMin: f.duration || undefined, days: f.type === 'daily' ? f.days : undefined,
       deadline: f.type === 'special' && f.deadlineDays ? new Date(Date.now() + f.deadlineDays * 86400000).toISOString() : undefined
     };
     var problem = D.validateMissionInput(input);
     if (problem) { f.error = problem; return render(); }
-    form = null; act.create(input); location.hash = '#/missions';
+    if (f.editId) {
+      var patch = { name: input.name, description: input.description, difficulty: input.difficulty, xp: input.xp, attributes: input.attributes, target: input.target, durationMin: input.durationMin, days: input.days };
+      if (!act.update(f.editId, patch)) { f.error = lastError; return render(); }
+      showToast('<div class="t1">Missão atualizada</div>');
+    } else act.create(input);
+    form = null; location.hash = '#/missions';
   }
 
   /* ------------------------------ eventos (modal / aviso) ------------------------------ */
   var toastTimer = null;
-  function showToast(html) {
-    $toast.innerHTML = html; $toast.classList.add('show');
-    clearTimeout(toastTimer); toastTimer = setTimeout(function () { $toast.classList.remove('show'); }, 3000);
+  function showToast(html, undoId) {
+    $toast.innerHTML = html + (undoId ? '<button class="toast-undo" data-act="undo" data-id="' + undoId + '">↶ Desfazer</button>' : '');
+    $toast.classList.toggle('actionable', !!undoId);
+    $toast.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { $toast.classList.remove('show', 'actionable'); }, undoId ? 6000 : 3000);
   }
   function vibrate(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} }
   function handleEvents(events) {
@@ -308,14 +470,19 @@
     events.forEach(function (e) {
       if (e.type === 'achievement') lines.push('✦ Conquista desbloqueada: ' + esc(e.name));
       else if (e.type === 'attributeUp') lines.push('▲ ' + esc(e.attribute.toUpperCase()) + ' Nv. ' + e.to);
+      else if (e.type === 'boss') lines.push('☠ Chefe derrotado: ' + esc(e.name.replace('Chefe: ', '')) + ' (+' + e.amount + ' XP)');
+      else if (e.type === 'bossHit' && e.left > 0) lines.push('⚔ Chefe −' + e.damage + ' de vida (restam ' + e.left + ')');
+      else if (e.type === 'seasonTier') lines.push('★ Temporada ' + esc(e.name) + ': marco ' + e.tier + '/3 (+' + e.coins + ' moedas)');
+      else if (e.type === 'seasonEnd') lines.push(e.success ? '★ Temporada concluída com sucesso!' : 'Temporada encerrada.');
+      else if (e.type === 'purchase') lines.push('◆ Resgatado: ' + esc(e.name) + ' (−' + e.cost + ' moedas)');
     });
     if (xpEv || lines.length) {
       vibrate(20);
-      showToast((xpEv ? '<div class="t1">[!] Missão concluída · +' + xpEv.amount + ' XP</div>' : '') + lines.map(function (l) { return '<div class="t2">' + l + '</div>'; }).join(''));
+      showToast((xpEv ? '<div class="t1">[!] Missão concluída · +' + xpEv.amount + ' XP</div>' : '') + lines.map(function (l) { return '<div class="t2">' + l + '</div>'; }).join(''), xpEv && xpEv.completionId);
     }
   }
   function showModal(events, levelUp, rankUp) {
-    var gained = events.reduce(function (s, e) { return s + (e.type === 'xp' ? e.amount : e.type === 'achievement' ? e.rewardXp : 0); }, 0);
+    var gained = events.reduce(function (s, e) { return s + (e.type === 'xp' || e.type === 'boss' ? e.amount : e.type === 'achievement' ? e.rewardXp : 0); }, 0);
     var achs = events.filter(function (e) { return e.type === 'achievement'; });
     var idx = game.rankIndex, color = D.RANKS[idx].color, level = D.levelProgress(game.totalXp).level;
     var prev = rankUp ? D.RANKS.findIndex(function (r) { return r.id === rankUp.from; }) : idx;
@@ -340,19 +507,36 @@
     var btn = $modal.querySelector('[data-act=close-modal]'); if (btn) btn.focus();
   }
   function closeModal() { $modal.innerHTML = ''; }
+  function openModal(inner, cls) {
+    $modal.innerHTML = '<div class="overlay" role="dialog" aria-modal="true"><div class="modal ' + (cls || '') + '">' + inner + '</div></div>';
+    var f = $modal.querySelector('[autofocus],input,textarea,button'); if (f) f.focus();
+  }
 
   /* ------------------------------ render & rotas ------------------------------ */
-  var TABS = [['#/', '◈', 'Painel'], ['#/missions', '⚔', 'Missões'], ['#/character', '♛', 'Personagem']];
+  var TABS = [['#/', '◈', 'Painel'], ['#/missions', '⚔', 'Missões'], ['#/stats', '▦', 'Stats'], ['#/store', '◆', 'Loja'], ['#/character', '♛', 'Perfil']];
+  var views = {}, handlers = {};
   function route() { return (location.hash || '#/').replace(/\/$/, '') || '#'; }
+  function hexRgb(h) { var n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+  function mix(rgb, k) { return rgb.map(function (v) { return Math.round(v + (255 - v) * k); }); }
+  /** Tema: "classic" mantém o azul; "rank" pinta a interface com a cor do rank atual. */
+  function applyTheme() {
+    var st = document.documentElement.style;
+    if (S.theme === 'rank' && game) {
+      var rgb = hexRgb(D.RANKS[game.rankIndex].color), gl = mix(rgb, 0.35);
+      st.setProperty('--accent', 'rgb(' + rgb.join(',') + ')'); st.setProperty('--glow', 'rgb(' + gl.join(',') + ')'); st.setProperty('--rgb', rgb.join(','));
+    } else { st.removeProperty('--accent'); st.removeProperty('--glow'); st.removeProperty('--rgb'); }
+  }
   function render() {
-    var y = window.scrollY, r = route(), html;
+    var y = window.scrollY, r = route(), html, hideTabs = false;
+    applyTheme();
     if (!game) html = viewOnboarding();
     else if (r === '#/missions') html = viewMissions();
     else if (r === '#/character') html = viewCharacter();
-    else if (r === '#/new') html = viewNew();
+    else if (r === '#/new' || r.indexOf('#/edit/') === 0) { html = viewNew(); hideTabs = true; }
+    else if (views[r]) html = views[r]();
     else html = viewDashboard();
-    if (game && r !== '#/new') {
-      var cur = r === '#/missions' ? '#/missions' : r === '#/character' ? '#/character' : '#/';
+    if (game && !hideTabs) {
+      var cur = r === '#/settings' ? '#/character' : (TABS.filter(function (t) { return t[0] === r; })[0] || TABS[0])[0];
       html += '<nav class="tabs"><div class="tabs-in">' + TABS.map(function (t) {
         return '<a href="' + t[0] + '" class="' + (t[0] === cur ? 'on' : '') + '"><span class="g">' + t[1] + '</span>' + t[2] + '</a>';
       }).join('') + '</div></nav>';
@@ -365,6 +549,7 @@
       var fm = document.getElementById('forms');
       if (fm && game) fm.scrollLeft = Math.max(0, game.rankIndex * 116 - 24);
     });
+    renderHooks.forEach(function (fn) { try { fn(r); } catch (e) { console.error(e); } });
   }
 
   /* Plano B para imagens: se não achar em assets/forms/, tenta forms/ e depois a raiz (upload sem a estrutura de pastas). */
@@ -378,30 +563,40 @@
 
   /* ------------------------------ eventos de interface ------------------------------ */
   document.addEventListener('click', function (ev) {
-    var el = ev.target.closest('[data-act]'); if (!el) return;
+    var el = ev.target.closest('[data-act]'); if (!el || el.disabled || el.hasAttribute('disabled')) return;
     var a = el.getAttribute('data-act'), id = el.getAttribute('data-id');
     switch (a) {
       case 'start': return act.start(document.getElementById('onb-name').value);
       case 'complete': return act.complete(id);
       case 'progress': return act.progress(id);
+      case 'undo': return act.undo(id);
+      case 'rest': return act.rest();
+      case 'mood': var jt = document.getElementById('journal-text'); if (jt) journalDraft = jt.value; journalMood = journalMood === Number(id) ? 0 : Number(id); return render();
+      case 'journal-save': var jx = document.getElementById('journal-text'); return act.journal(jx ? jx.value : '', journalMood != null ? journalMood : ((game.journal || []).filter(function (j) { return j.day === D.dayKey(new Date()); })[0] || {}).mood);
+      case 'title': return apply(function (g) { return { state: D.setTitle(g, id || null), events: [] }; });
+      case 'frame': return apply(function (g) { return { state: D.setFrame(g, id === '' ? null : Number(id)), events: [] }; });
       case 'remove': if (confirm('Remover "' + el.getAttribute('data-name') + '"? O XP já conquistado é mantido.')) act.remove(id); return;
       case 'tab': tab = id; return render();
       case 'rename': return act.rename(document.getElementById('char-name').value);
-      case 'reset': if (confirm('Todo o progresso será apagado deste navegador. Esta ação não pode ser desfeita.')) act.reset(); return;
+      case 'reset': if (confirm('Todo o progresso será apagado deste navegador. Esta ação não pode ser desfeita. Faça um backup antes, se quiser guardar.')) act.reset(); return;
       case 'close-modal': return closeModal();
+      case 'f-tpl': applyTemplate(Number(id)); return render();
       case 'f-type': form.type = id; suggest(); return render();
       case 'f-diff': form.difficulty = id; suggest(); return render();
+      case 'f-day': var di = form.days.indexOf(Number(id)); if (di >= 0) form.days.splice(di, 1); else form.days.push(Number(id)); return render();
       case 'f-deadline': form.deadlineDays = id === 'null' ? null : Number(id); return render();
       case 'f-attr': var i = form.attrs.indexOf(id); if (i >= 0) form.attrs.splice(i, 1); else form.attrs.push(id); return render();
       case 'f-dec': form.target = Math.max(1, form.target - 1); return render();
       case 'f-inc': form.target = Math.min(100, form.target + 1); return render();
       case 'f-dur': form.duration = Number(id); return render();
       case 'f-save': return saveForm();
+      default: if (handlers[a]) return handlers[a](el, ev);
     }
   });
   document.addEventListener('input', function (ev) {
     var t = ev.target;
     if (t.id === 'char-name') { var box = document.getElementById('save-name'); box.classList.toggle('hidden', !t.value.trim() || t.value.trim() === game.player.name); return; }
+    if (t.id === 'journal-text') { journalDraft = t.value; return; }
     var field = t.getAttribute && t.getAttribute('data-field'); if (!field || !form) return;
     if (field === 'xp') { t.value = t.value.replace(/[^0-9]/g, ''); form.xp = t.value; form.xpEdited = true; } else form[field] = t.value;
   });
@@ -410,7 +605,13 @@
     if (ev.key === 'Enter' && ev.target.id === 'char-name') ev.target.blur();
     if (ev.key === 'Escape' && $modal.firstChild) closeModal();
   });
-  window.addEventListener('hashchange', function () { if (route() === '#/new' && !form) form = newForm(); if (route() !== '#/new') form = null; render(); window.scrollTo(0, 0); });
+  window.addEventListener('hashchange', function () {
+    var r = route();
+    if (r === '#/new') { if (!form || form.editId) form = newForm(); }
+    else if (r.indexOf('#/edit/') === 0) { /* viewNew monta o formulário */ }
+    else form = null;
+    render(); window.scrollTo(0, 0);
+  });
 
   /* ------------------------------ início ------------------------------ */
   (function dots() {
@@ -418,13 +619,27 @@
     for (var i = 0; i < 14; i++) out += '<div class="dot" style="left:' + (rnd() * 100).toFixed(1) + '%;top:' + (rnd() * 100).toFixed(1) + '%;animation-delay:' + (rnd() * 4).toFixed(1) + 's;animation-duration:' + (3.5 + rnd() * 3.5).toFixed(1) + 's"></div>';
     document.getElementById('dots').innerHTML = out;
   })();
-  load(); refresh(); render();
-  setInterval(function () {
-    if (!game) return;
-    var typing = document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName);
-    refresh();
-    if (!typing && !$modal.firstChild) render();
-  }, 60000);
-  // Se o progresso for alterado em outra aba, sincroniza.
-  window.addEventListener('storage', function (e) { if (e.key === KEY) { load(); render(); } });
+
+  /** Ponte para features.js (estatísticas, loja, backup, foco, PWA, atalhos...). */
+  window.AW = {
+    D: D, S: S, KEY: KEY, SKEY: SKEY, SNAPKEY: SNAPKEY, views: views, handlers: handlers, onRender: renderHooks,
+    getGame: function () { return game; }, getNow: function () { return now; }, setGame: setGame, isStorageOk: function () { return storageOk; },
+    apply: apply, act: act, render: render, route: route, save: save, load: load, saveSettings: saveSettings, takeSnapshot: takeSnapshot, applyTheme: applyTheme,
+    showToast: showToast, openModal: openModal, closeModal: closeModal, handleEvents: handleEvents,
+    esc: esc, panel: panel, bar: bar, chip: chip, figure: figure, rankBadge: rankBadge, missionCard: missionCard, attrRow: attrRow,
+    pad: pad, dm: dm, DIFF_COLOR: DIFF_COLOR, TYPE_LABEL: TYPE_LABEL, DAYS3: DAYS3, MOODS: MOODS, lastError: function () { return lastError; }
+  };
+
+  function start() {
+    loadSettings(); load(); refresh(); render();
+    setInterval(function () {
+      if (!game) return;
+      var typing = document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName);
+      refresh();
+      if (!typing && !$modal.firstChild) render();
+    }, 60000);
+    // Se o progresso for alterado em outra aba, sincroniza.
+    window.addEventListener('storage', function (e) { if (e.key === KEY) { load(); render(); } });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();

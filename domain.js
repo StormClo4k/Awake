@@ -76,7 +76,31 @@ var Domain = (() => {
     weekKey: () => weekKey,
     xpByDay: () => xpByDay,
     xpToNextLevel: () => xpToNextLevel,
-    xpToday: () => xpToday
+    xpToday: () => xpToday,
+    SEASON_PLANS: () => SEASON_PLANS,
+    SEASON_TIERS: () => SEASON_TIERS,
+    SEASON_DAYS_GOAL: () => SEASON_DAYS_GOAL,
+    addReward: () => addReward,
+    availableTitles: () => availableTitles,
+    bossHp: () => bossHp,
+    buyReward: () => buyReward,
+    coinBalance: () => coinBalance,
+    coinsForXp: () => coinsForXp,
+    currentTitle: () => currentTitle,
+    isMissionScheduled: () => isMissionScheduled,
+    maybeSpawnBoss: () => maybeSpawnBoss,
+    normalizeState: () => normalizeState,
+    removeReward: () => removeReward,
+    saveJournal: () => saveJournal,
+    seasonProgress: () => seasonProgress,
+    setFrame: () => setFrame,
+    setTitle: () => setTitle,
+    startSeason: () => startSeason,
+    streaks: () => streaks,
+    toggleRestDay: () => toggleRestDay,
+    undoCompletion: () => undoCompletion,
+    updateMission: () => updateMission,
+    updateSeason: () => updateSeason
   });
 
   // src/domain/achievements.ts
@@ -108,7 +132,15 @@ var Domain = (() => {
     { id: "centuriao", name: "Centuri\xE3o", description: "Conclua 200 miss\xF5es.", rarity: "epic", icon: "\u269C", rewardXp: 800, metric: "missionsCompleted", target: 200 },
     { id: "nivel-50", name: "Meio Caminho", description: "Alcance o n\xEDvel 50.", rarity: "epic", icon: "\u25C6", rewardXp: 1e3, metric: "level", target: 50 },
     { id: "ascensao", name: "Ascens\xE3o", description: "Alcance o Rank S.", rarity: "epic", icon: "\u2739", rewardXp: 1e3, metric: "rankIndex", target: 5 },
-    { id: "monarca", name: "Monarca", description: "Alcance o ranking m\xE1ximo.", rarity: "legendary", icon: "\u265B", rewardXp: 5e3, metric: "rankIndex", target: 8 }
+    { id: "monarca", name: "Monarca", description: "Alcance o ranking m\xE1ximo.", rarity: "legendary", icon: "\u265B", rewardXp: 5e3, metric: "rankIndex", target: 8 },
+    { id: "recompensado", name: "Merecido", description: "Resgate sua primeira recompensa na loja.", rarity: "common", icon: "\u25C8", rewardXp: 30, metric: "purchases", target: 1 },
+    { id: "cacador-chefes", name: "Ca\xE7ador de Chefes", description: "Derrote seu primeiro chefe semanal.", rarity: "uncommon", icon: "\u2620", rewardXp: 150, metric: "bossesDefeated", target: 1 },
+    { id: "diarista", name: "Diarista", description: "Escreva 7 anota\xE7\xF5es no di\xE1rio.", rarity: "uncommon", icon: "\u270E", rewardXp: 100, metric: "journalCount", target: 7 },
+    { id: "volta-por-cima", name: "Volta por Cima", description: "Retome a evolu\xE7\xE3o depois de 7 dias parado.", rarity: "rare", icon: "\u21BA", rewardXp: 200, metric: "comebacks", target: 1 },
+    { id: "foco-profundo", name: "Foco Profundo", description: "Complete 10 sess\xF5es de foco.", rarity: "rare", icon: "\u25C9", rewardXp: 300, metric: "focusSessions", target: 10 },
+    { id: "semana-perfeita", name: "Semana Perfeita", description: "Evolua nos 7 dias de uma mesma semana.", rarity: "epic", icon: "\u2606", rewardXp: 500, metric: "perfectWeeks", target: 1 },
+    { id: "equilibrio", name: "Equil\xEDbrio", description: "Todos os atributos no n\xEDvel 10.", rarity: "epic", icon: "\u2726", rewardXp: 700, metric: "minAttributeLevel", target: 10 },
+    { id: "exterminador", name: "Exterminador", description: "Derrote 10 chefes semanais.", rarity: "epic", icon: "\u2716", rewardXp: 900, metric: "bossesDefeated", target: 10 }
   ];
   var achievementById = (id) => ACHIEVEMENTS.find((a) => a.id === id);
   var achievementProgress = (a, stats) => ({
@@ -444,47 +476,76 @@ var Domain = (() => {
   var MAX_MISSION_XP = 2e3;
 
   // src/domain/stats.ts
-  function streaks(dayKeys, today) {
+  function streaks(dayKeys, today, restDays) {
     if (dayKeys.length === 0) return { current: 0, best: 0 };
-    const nums = [...new Set(dayKeys)].map(dayNumber).sort((a, b) => a - b);
-    let best = 1;
-    let run = 1;
-    for (let i = 1; i < nums.length; i++) {
-      run = nums[i] === nums[i - 1] + 1 ? run + 1 : 1;
-      if (run > best) best = run;
-    }
+    const active = new Set(dayKeys.map(dayNumber));
+    const rest = new Set((restDays || []).map(dayNumber));
+    const nums = [...active].sort((a, b) => a - b);
+    const first = nums[0];
     const last = nums[nums.length - 1];
+    let best = 0;
+    let run = 0;
+    for (let n = first; n <= last; n++) {
+      if (active.has(n)) {
+        run++;
+        if (run > best) best = run;
+      } else if (!rest.has(n)) run = 0;
+    }
     const todayNum = dayNumber(today);
     let current = 0;
-    if (last === todayNum || last === todayNum - 1) {
-      current = 1;
-      for (let i = nums.length - 1; i > 0 && nums[i] === nums[i - 1] + 1; i--) current++;
+    for (let n = todayNum; n >= first; n--) {
+      if (active.has(n)) current++;
+      else if (rest.has(n)) continue;
+      else if (n === todayNum) continue;
+      else break;
     }
     return { current, best };
   }
   function deriveStats(state, now = /* @__PURE__ */ new Date()) {
-    const days = state.completions.map((c) => c.day);
-    const { current, best } = streaks(days, dayKey(now));
+    const completions = state.completions;
+    const days = completions.map((c) => c.day);
+    const restDays = state.restDays || [];
+    const { current, best } = streaks(days, dayKey(now), restDays);
     const attributeLevels = {};
     for (const id of ATTRIBUTE_IDS) attributeLevels[id] = attributeProgress(state.attributeXp[id]).level;
-    const trainings = state.completions.filter((c) => c.attributes.includes("forca")).length;
-    const studyMinutes = state.completions.filter((c) => c.attributes.includes("inteligencia")).reduce((sum, c) => {
-      var _a;
-      return sum + ((_a = c.durationMin) != null ? _a : 0);
-    }, 0);
+    const trainings = completions.filter((c) => c.attributes.includes("forca")).length;
+    const studyMinutes = completions.filter((c) => c.attributes.includes("inteligencia")).reduce((sum, c) => sum + (c.durationMin || 0), 0);
+    const uniq = [...new Set(days)].sort();
+    const restN = new Set(restDays.map(dayNumber));
+    let comebacks = 0;
+    for (let i = 1; i < uniq.length; i++) {
+      const a = dayNumber(uniq[i - 1]);
+      const b = dayNumber(uniq[i]);
+      let gap = 0;
+      for (let n = a + 1; n < b; n++) if (!restN.has(n)) gap++;
+      if (gap >= 7) comebacks++;
+    }
+    const byWeek = /* @__PURE__ */ new Map();
+    for (const d of uniq) {
+      const [y, m, dd] = d.split("-").map(Number);
+      const wk = weekKey(new Date(y, m - 1, dd));
+      byWeek.set(wk, (byWeek.get(wk) || 0) + 1);
+    }
+    const perfectWeeks = [...byWeek.values()].filter((n) => n >= 7).length;
     return {
       level: levelFromXp(state.totalXp),
       totalXp: state.totalXp,
       activeDays: new Set(days).size,
       currentStreak: current,
       bestStreak: best,
-      missionsCompleted: state.completions.length,
+      missionsCompleted: completions.length,
       trainings,
       studyHours: Math.floor(studyMinutes / 60),
       unlockedCount: Object.keys(state.unlocked).length,
       rankIndex: state.rankIndex,
       minAttributeLevel: Math.min(...ATTRIBUTE_IDS.map((id) => attributeLevels[id])),
-      attributeLevels
+      attributeLevels,
+      comebacks,
+      perfectWeeks,
+      bossesDefeated: completions.filter((c) => c.kind === "boss").length,
+      purchases: (state.purchases || []).length,
+      journalCount: (state.journal || []).filter((j) => j.text).length,
+      focusSessions: completions.filter((c) => c.focus).length
     };
   }
 
@@ -492,7 +553,7 @@ var Domain = (() => {
   var newId = (prefix) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   function periodKey(type, now) {
     if (type === "daily") return dayKey(now);
-    if (type === "weekly") return weekKey(now);
+    if (type === "weekly" || type === "boss") return weekKey(now);
     return "once";
   }
   function missionProgress(m, now) {
@@ -513,6 +574,9 @@ var Domain = (() => {
     if (input.target !== void 0 && (input.target < 1 || input.target > 100)) {
       return "A meta deve ficar entre 1 e 100 etapas.";
     }
+    if (input.days !== void 0 && (!Array.isArray(input.days) || input.days.some((d) => !Number.isInteger(d) || d < 0 || d > 6))) {
+      return "Dias da semana inv\xE1lidos.";
+    }
     return null;
   }
   function buildMission(input, now) {
@@ -528,6 +592,7 @@ var Domain = (() => {
       xp: Math.round((_b = input.xp) != null ? _b : suggestedXp(input.type, input.difficulty)),
       attributes: [...new Set(input.attributes)],
       deadline: input.deadline,
+      days: input.type === "daily" && Array.isArray(input.days) && input.days.length > 0 && input.days.length < 7 ? [...new Set(input.days)].sort() : void 0,
       target: Math.round((_c = input.target) != null ? _c : 1),
       progress: { current: 0, periodKey: periodKey(input.type, now) },
       status: "active",
@@ -552,7 +617,7 @@ var Domain = (() => {
     });
     return changed ? { ...state, missions } : state;
   }
-  function grantReward(state, mission, now) {
+  function grantReward(state, mission, now, opts = {}) {
     var _a;
     const split = splitXp(mission.xp, mission.attributes);
     const attributeXp = { ...state.attributeXp };
@@ -565,7 +630,9 @@ var Domain = (() => {
       day: dayKey(now),
       xp: mission.xp,
       attributes: mission.attributes,
-      durationMin: mission.durationMin
+      durationMin: opts.focusMin != null ? opts.focusMin : mission.durationMin,
+      kind: mission.type,
+      focus: opts.focus ? true : void 0
     };
     return {
       ...state,
@@ -574,11 +641,12 @@ var Domain = (() => {
       completions: [...state.completions, completion]
     };
   }
-  function addProgress(state, missionId, amount = 1, now = /* @__PURE__ */ new Date()) {
+  function addProgress(state, missionId, amount = 1, now = /* @__PURE__ */ new Date(), opts = {}) {
     const mission = state.missions.find((m) => m.id === missionId);
-    if (!mission || mission.status !== "active" || isMissionDone(mission, now)) {
+    if (!mission || mission.type === "boss" || mission.status !== "active" || isMissionDone(mission, now)) {
       return { state, events: [] };
     }
+    if (!isMissionScheduled(mission, now)) return { state, events: [] };
     if (mission.deadline && new Date(mission.deadline) < now) return { state, events: [] };
     const key = periodKey(mission.type, now);
     const previous = mission.progress.periodKey === key ? mission.progress.current : 0;
@@ -594,13 +662,16 @@ var Domain = (() => {
       missions: state.missions.map((m) => m.id === missionId ? updated : m)
     };
     if (!completed) return { state: draft, events: [] };
-    const events = [{ type: "xp", amount: mission.xp, missionName: mission.name }];
-    return settle(state, grantReward(draft, mission, now), now, events);
+    const rewarded = grantReward(draft, mission, now, opts);
+    const comp = rewarded.completions[rewarded.completions.length - 1];
+    const events = [{ type: "xp", amount: mission.xp, missionName: mission.name, completionId: comp.id }];
+    const hit = damageBoss(rewarded, mission.xp, now, events);
+    return settle(state, hit, now, events);
   }
-  function completeMission(state, missionId, now = /* @__PURE__ */ new Date()) {
+  function completeMission(state, missionId, now = /* @__PURE__ */ new Date(), opts = {}) {
     const mission = state.missions.find((m) => m.id === missionId);
     if (!mission) return { state, events: [] };
-    return addProgress(state, missionId, mission.target - missionProgress(mission, now), now);
+    return addProgress(state, missionId, mission.target - missionProgress(mission, now), now, opts);
   }
   function settle(before, draft, now, events) {
     let state = draft;
@@ -678,7 +749,16 @@ var Domain = (() => {
       missions: starterMissions(now),
       completions: [],
       unlocked: {},
-      history: []
+      history: [],
+      restDays: [],
+      journal: [],
+      rewards: STARTER_REWARDS.map((r) => ({ id: newId("r"), ...r })),
+      purchases: [],
+      friends: [],
+      seasonCoins: 0,
+      season: null,
+      seasonHistory: [],
+      seasonBadges: []
     };
   }
   var EMERGENCY_TEMPLATES = [
@@ -732,7 +812,342 @@ var Domain = (() => {
     }
     const eligible = evaluateRankIndex(deriveStats(state, now), Object.keys(state.unlocked));
     if (state.rankIndex > eligible) problems.push("Rank acima do que os requisitos permitem.");
+    if (coinBalance(state) < 0) problems.push("Saldo de moedas negativo.");
     return { ok: problems.length === 0, problems };
+  }
+
+
+  // src/domain/extras.ts
+  var STARTER_REWARDS = [
+    { name: "Um episódio da minha série", cost: 30 },
+    { name: "Sobremesa favorita", cost: 40 },
+    { name: "Noite de jogo sem culpa", cost: 80 },
+    { name: "Um dia de folga completo", cost: 150 }
+  ];
+  function normalizeState(s2) {
+    if (!s2 || typeof s2 !== "object") return s2;
+    const p = s2.player || {};
+    return {
+      ...s2,
+      missions: s2.missions || [],
+      completions: s2.completions || [],
+      unlocked: s2.unlocked || {},
+      history: s2.history || [],
+      restDays: s2.restDays || [],
+      journal: s2.journal || [],
+      rewards: s2.rewards || [],
+      purchases: s2.purchases || [],
+      friends: s2.friends || [],
+      seasonCoins: s2.seasonCoins || 0,
+      season: s2.season || null,
+      seasonHistory: s2.seasonHistory || [],
+      seasonBadges: s2.seasonBadges || [],
+      player: { ...p, title: p.title || null, frame: p.frame != null ? p.frame : null }
+    };
+  }
+  function isMissionScheduled(m, now) {
+    return m.type === "daily" && m.days && m.days.length ? m.days.includes(now.getDay()) : true;
+  }
+  var coinsForXp = (xp) => Math.max(1, Math.round(xp / 10));
+  function coinBalance(state) {
+    const earned = state.completions.reduce((sum, c) => sum + coinsForXp(c.xp), 0) + (state.seasonCoins || 0);
+    const spent = (state.purchases || []).reduce((sum, p) => sum + p.cost, 0);
+    return earned - spent;
+  }
+  function updateMission(state, missionId, patch, now = /* @__PURE__ */ new Date()) {
+    const m = state.missions.find((x) => x.id === missionId);
+    if (!m) return { state, error: "Missão não encontrada." };
+    if (m.type === "boss") return { state, error: "Chefes não podem ser editados." };
+    const has = (k) => Object.prototype.hasOwnProperty.call(patch, k);
+    const input = {
+      name: has("name") ? patch.name : m.name,
+      description: has("description") ? patch.description : m.description,
+      type: m.type,
+      difficulty: has("difficulty") ? patch.difficulty : m.difficulty,
+      xp: has("xp") ? patch.xp : m.xp,
+      attributes: has("attributes") ? patch.attributes : m.attributes,
+      target: has("target") ? patch.target : m.target,
+      durationMin: has("durationMin") ? patch.durationMin : m.durationMin,
+      days: has("days") ? patch.days : m.days
+    };
+    const error = validateMissionInput(input);
+    if (error) return { state, error };
+    if (Math.round(input.target) !== m.target && missionProgress(m, now) > 0) {
+      return { state, error: "Não dá para mudar a meta com etapas já feitas neste período." };
+    }
+    const updated = {
+      ...m,
+      name: input.name.trim(),
+      description: (input.description || "").trim(),
+      difficulty: input.difficulty,
+      xp: Math.round(input.xp),
+      attributes: [...new Set(input.attributes)],
+      target: Math.round(input.target),
+      durationMin: input.durationMin || void 0,
+      days: m.type === "daily" && Array.isArray(input.days) && input.days.length > 0 && input.days.length < 7 ? [...new Set(input.days)].sort() : void 0,
+      deadline: has("deadline") ? patch.deadline : m.deadline
+    };
+    return { state: { ...state, missions: state.missions.map((x) => x.id === missionId ? updated : x) } };
+  }
+  function dropCompletion(s2, c) {
+    var _a;
+    const split = splitXp(c.xp, c.attributes);
+    const attributeXp = { ...s2.attributeXp };
+    for (const id of ATTRIBUTE_IDS) attributeXp[id] -= (_a = split[id]) != null ? _a : 0;
+    return { ...s2, totalXp: s2.totalXp - c.xp, attributeXp, completions: s2.completions.filter((x) => x.id !== c.id) };
+  }
+  function undoCompletion(state, completionId, now = /* @__PURE__ */ new Date()) {
+    const c = state.completions.find((x) => x.id === completionId);
+    if (!c) return { state, error: "Conclusão não encontrada." };
+    if (c.day !== dayKey(now)) return { state, error: "Só dá para desfazer conclusões de hoje." };
+    if (c.kind === "boss") return { state, error: "A recompensa de um chefe não pode ser desfeita." };
+    let s2 = dropCompletion(state, c);
+    const at = new Date(c.at);
+    const wk = weekKey(at);
+    let revertedBoss = null;
+    s2 = {
+      ...s2,
+      missions: s2.missions.map((m) => {
+        if (m.id === c.missionId) {
+          if (m.progress.periodKey !== periodKey(m.type, at)) return m;
+          return {
+            ...m,
+            progress: { current: Math.max(0, m.target - 1), periodKey: m.progress.periodKey },
+            status: m.status === "completed" ? "active" : m.status
+          };
+        }
+        if (m.type === "boss" && m.progress.periodKey === wk && m.createdAt <= c.at) {
+          const cur = Math.max(0, m.progress.current - c.xp);
+          if (m.status === "completed" && cur < m.target) {
+            revertedBoss = m;
+            return { ...m, progress: { current: cur, periodKey: wk }, status: "active" };
+          }
+          return { ...m, progress: { current: cur, periodKey: wk } };
+        }
+        return m;
+      })
+    };
+    if (revertedBoss) {
+      const bc = s2.completions.find((x) => x.missionId === revertedBoss.id && x.kind === "boss");
+      if (bc) s2 = dropCompletion(s2, bc);
+    }
+    const revoked = [];
+    for (let i = 0; i < 10; i++) {
+      const stats = deriveStats(s2, now);
+      let changed = false;
+      for (const id of Object.keys(s2.unlocked)) {
+        const a = achievementById(id);
+        if (a && s2.unlocked[id] >= c.at && !isAchieved(a, stats)) {
+          const unlocked = { ...s2.unlocked };
+          delete unlocked[id];
+          s2 = { ...s2, unlocked, totalXp: s2.totalXp - a.rewardXp };
+          revoked.push(id);
+          changed = true;
+        }
+      }
+      if (!changed) break;
+    }
+    s2 = {
+      ...s2,
+      history: s2.history.filter((h) => h.at !== c.at && !(h.type === "achievement" && revoked.includes(h.achievementId)))
+    };
+    const eligible = evaluateRankIndex(deriveStats(s2, now), Object.keys(s2.unlocked));
+    if (s2.rankIndex > eligible) return { state, error: "Essa conclusão fez você subir de rank e não pode ser desfeita." };
+    if (coinBalance(s2) < 0) return { state, error: "Você já gastou as moedas ganhas nessa conclusão." };
+    return { state: s2, events: [] };
+  }
+  function toggleRestDay(state, now = /* @__PURE__ */ new Date()) {
+    const key = dayKey(now);
+    const rest = state.restDays || [];
+    if (rest.includes(key)) return { state: { ...state, restDays: rest.filter((d) => d !== key) }, events: [] };
+    if (state.completions.some((c) => c.day === key)) {
+      return { state, error: "Você já evoluiu hoje, não precisa descansar." };
+    }
+    const wk = weekKey(now);
+    const inWeek = rest.filter((d) => {
+      const [y, m, dd] = d.split("-").map(Number);
+      return weekKey(new Date(y, m - 1, dd)) === wk;
+    });
+    if (inWeek.length >= 2) return { state, error: "Máximo de 2 dias de descanso por semana." };
+    return { state: { ...state, restDays: [...rest, key].slice(-400) }, events: [] };
+  }
+  function addReward(state, input) {
+    const name = (input.name || "").trim().slice(0, 60);
+    const cost = Math.round(Number(input.cost));
+    if (!name) return { state, error: "Dê um nome à recompensa." };
+    if (!(cost >= 1 && cost <= 99999)) return { state, error: "O custo deve ficar entre 1 e 99999 moedas." };
+    return { state: { ...state, rewards: [...state.rewards || [], { id: newId("r"), name, cost }] }, events: [] };
+  }
+  function removeReward(state, rewardId) {
+    return { state: { ...state, rewards: (state.rewards || []).filter((r) => r.id !== rewardId) }, events: [] };
+  }
+  function buyReward(state, rewardId, now = /* @__PURE__ */ new Date()) {
+    const r = (state.rewards || []).find((x) => x.id === rewardId);
+    if (!r) return { state, events: [], error: "Recompensa não encontrada." };
+    if (coinBalance(state) < r.cost) return { state, events: [], error: "Moedas insuficientes." };
+    const draft = {
+      ...state,
+      purchases: [...state.purchases || [], { id: newId("p"), rewardId: r.id, name: r.name, cost: r.cost, at: now.toISOString() }]
+    };
+    return settle(state, draft, now, [{ type: "purchase", name: r.name, cost: r.cost }]);
+  }
+  function saveJournal(state, input, now = /* @__PURE__ */ new Date()) {
+    const day = dayKey(now);
+    const text = (input.text || "").trim().slice(0, 280);
+    const mood = input.mood >= 1 && input.mood <= 5 ? input.mood : void 0;
+    const journal = (state.journal || []).filter((j) => j.day !== day);
+    if (text || mood) journal.push({ day, text, mood, at: now.toISOString() });
+    return settle(state, { ...state, journal: journal.slice(-400) }, now, []);
+  }
+  var BOSS_NAMES = [
+    "Guardião da Preguiça",
+    "Golem da Procrastinação",
+    "Sentinela do Sono Eterno",
+    "Hidra das Distrações",
+    "Cavaleiro da Dúvida",
+    "Titã da Inércia",
+    "Espectro do Adiamento",
+    "Serpente do Cansaço"
+  ];
+  function bossHp(state, now) {
+    const since = dayKey(addDays(now, -13));
+    const xp14 = state.completions.filter((c) => c.day >= since && c.kind !== "boss").reduce((sum, c) => sum + c.xp, 0);
+    return Math.round(Math.max(400, Math.min(4e3, xp14 / 2 * 0.9)) / 10) * 10;
+  }
+  function maybeSpawnBoss(state, now = /* @__PURE__ */ new Date()) {
+    if (state.completions.length < 3) return state;
+    const key = weekKey(now);
+    const cutoff = dayKey(addDays(now, -28));
+    const missions = state.missions.filter((m) => !(m.type === "boss" && m.progress.periodKey < cutoff));
+    const pruned = missions.length !== state.missions.length;
+    if (missions.some((m) => m.type === "boss" && m.progress.periodKey === key)) return pruned ? { ...state, missions } : state;
+    const hp = bossHp(state, now);
+    const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    monday.setDate(monday.getDate() - (monday.getDay() + 6) % 7);
+    const boss = {
+      id: newId("m"),
+      name: "Chefe: " + BOSS_NAMES[Math.floor(dayNumber(key) / 7) % BOSS_NAMES.length],
+      description: "Cause " + hp + " de dano nesta semana. Cada missão concluída causa dano igual ao seu XP.",
+      type: "boss",
+      difficulty: "A",
+      xp: Math.round(hp * 0.4 / 10) * 10,
+      attributes: [...ATTRIBUTE_IDS],
+      deadline: addDays(monday, 7).toISOString(),
+      target: hp,
+      progress: { current: 0, periodKey: key },
+      status: "active",
+      createdAt: now.toISOString()
+    };
+    return { ...state, missions: [...missions, boss] };
+  }
+  function damageBoss(state, xp, now, events) {
+    const key = weekKey(now);
+    const idx = state.missions.findIndex(
+      (m) => m.type === "boss" && m.status === "active" && m.progress.periodKey === key && (!m.deadline || new Date(m.deadline) >= now)
+    );
+    if (idx < 0) return state;
+    const b = state.missions[idx];
+    const current = Math.min(b.target, b.progress.current + xp);
+    const defeated = current >= b.target;
+    const updated = { ...b, progress: { current, periodKey: key }, status: defeated ? "completed" : "active" };
+    let next = { ...state, missions: state.missions.map((m, i) => i === idx ? updated : m) };
+    events.push({ type: "bossHit", name: b.name, damage: current - b.progress.current, left: b.target - current });
+    if (defeated) {
+      next = grantReward(next, updated, now, {});
+      events.push({ type: "boss", name: b.name, amount: b.xp });
+    }
+    return next;
+  }
+  var SEASON_PLANS = {
+    leve: { label: "Leve", goalXp: 1500 },
+    normal: { label: "Normal", goalXp: 3e3 },
+    intensa: { label: "Intensa", goalXp: 5e3 }
+  };
+  var SEASON_DAYS = 30;
+  var SEASON_DAYS_GOAL = 20;
+  var SEASON_TIERS = [{ at: 1 / 3, coins: 50 }, { at: 2 / 3, coins: 100 }, { at: 1, coins: 200 }];
+  function startSeason(state, input, now = /* @__PURE__ */ new Date()) {
+    if (state.season) return { state, error: "Já existe uma temporada em andamento." };
+    const plan = SEASON_PLANS[input.plan] ? input.plan : "normal";
+    const season = {
+      id: newId("s"),
+      name: (input.name || "").trim().slice(0, 32) || "Temporada " + ((state.seasonHistory || []).length + 1),
+      plan,
+      goalXp: SEASON_PLANS[plan].goalXp,
+      startDay: dayKey(now),
+      endDay: dayKey(addDays(now, SEASON_DAYS - 1)),
+      claimed: []
+    };
+    return { state: { ...state, season }, events: [] };
+  }
+  function seasonProgress(state, now = /* @__PURE__ */ new Date()) {
+    const s2 = state.season;
+    if (!s2) return null;
+    const inRange = state.completions.filter((c) => c.day >= s2.startDay && c.day <= s2.endDay);
+    const xp = inRange.reduce((sum, c) => sum + c.xp, 0);
+    const activeDays = new Set(inRange.map((c) => c.day)).size;
+    const daysLeft = Math.max(0, dayNumber(s2.endDay) - dayNumber(dayKey(now)));
+    const tiers = SEASON_TIERS.map((t, i) => {
+      const need = Math.round(s2.goalXp * t.at);
+      return { xp: need, coins: t.coins, reached: xp >= need, claimed: s2.claimed.includes(i) };
+    });
+    return { season: s2, xp, activeDays, daysLeft, tiers };
+  }
+  function updateSeason(state, now = /* @__PURE__ */ new Date()) {
+    const events = [];
+    if (!state.season) return { state, events };
+    let st = state;
+    let s2 = state.season;
+    const p = seasonProgress(st, now);
+    const claimed = [...s2.claimed];
+    let coins = 0;
+    p.tiers.forEach((t, i) => {
+      if (t.reached && !claimed.includes(i)) {
+        claimed.push(i);
+        coins += t.coins;
+        events.push({ type: "seasonTier", name: s2.name, tier: i + 1, coins: t.coins });
+      }
+    });
+    if (claimed.length !== s2.claimed.length) {
+      s2 = { ...s2, claimed };
+      st = { ...st, season: s2, seasonCoins: (st.seasonCoins || 0) + coins };
+    }
+    if (dayKey(now) > s2.endDay) {
+      const ok = p.xp >= s2.goalXp && p.activeDays >= SEASON_DAYS_GOAL;
+      const entry = { ...s2, xp: p.xp, activeDays: p.activeDays, success: ok, finishedAt: now.toISOString() };
+      st = {
+        ...st,
+        season: null,
+        seasonHistory: [...st.seasonHistory || [], entry],
+        seasonBadges: ok ? [...st.seasonBadges || [], { id: s2.id, name: s2.name, at: now.toISOString() }] : st.seasonBadges || []
+      };
+      events.push({ type: "seasonEnd", name: s2.name, success: ok });
+    }
+    return { state: st, events };
+  }
+  function availableTitles(state) {
+    const out = [];
+    RANKS.forEach((r, i) => {
+      if (i <= state.rankIndex) out.push({ id: "rank:" + r.id, label: r.name + " · " + r.title, color: r.color });
+    });
+    ACHIEVEMENTS.forEach((a) => {
+      if (state.unlocked[a.id]) out.push({ id: "ach:" + a.id, label: a.name, color: RARITY_COLOR[a.rarity] });
+    });
+    (state.seasonBadges || []).forEach((b) => out.push({ id: "badge:" + b.id, label: "Insígnia: " + b.name, color: "#FFD166" }));
+    return out;
+  }
+  function currentTitle(state) {
+    const id = state.player && state.player.title;
+    if (!id) return null;
+    return availableTitles(state).find((t) => t.id === id) || null;
+  }
+  function setTitle(state, id) {
+    if (id && !availableTitles(state).some((t) => t.id === id)) return state;
+    return { ...state, player: { ...state.player, title: id || null } };
+  }
+  function setFrame(state, idx) {
+    if (idx !== null && !(idx >= 0 && idx <= state.rankIndex)) return state;
+    return { ...state, player: { ...state.player, frame: idx } };
   }
 
   // src/domain/selectors.ts
@@ -752,7 +1167,7 @@ var Domain = (() => {
   var dailyMissions = (state) => state.missions.filter((m) => m.type === "daily");
   function pendingMissions(state, now = /* @__PURE__ */ new Date()) {
     return state.missions.filter(
-      (m) => m.status === "active" && !isMissionDone(m, now) && !isMissionExpired(m, now)
+      (m) => m.status === "active" && !isMissionDone(m, now) && !isMissionExpired(m, now) && isMissionScheduled(m, now)
     );
   }
   function pendingDaily(state, now = /* @__PURE__ */ new Date()) {
