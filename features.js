@@ -353,7 +353,7 @@
     if (/treino|academia|corrida|muscula|exerc|caminhada|esporte|nata|pedal/.test(n)) a.push('forca', 'vitalidade');
     if (/estud|curso|aula|program|ler |leitura|livro|ingles|idioma/.test(n)) a.push('inteligencia', 'foco');
     if (/dorm|agua|aliment|dieta|medit|sono|saude|skincare/.test(n)) a.push('vitalidade');
-    if (/reuniao|amig|familia|socia|network|mensagem/.test(n)) a.push('carisma');
+    if (/reuniao|amig|familia|socia|network|mensagem|conversa|ligar|ligacao|telefon|elogi|agradec|obrigad|apresenta|palestra|falar em publico|encontro|festa|convers|contato|conectar|networking|escuta|encontrar/.test(n)) a.push('carisma');
     if (!a.length) a.push('disciplina');
     return a.filter(function (x, i) { return a.indexOf(x) === i; }).slice(0, 2);
   }

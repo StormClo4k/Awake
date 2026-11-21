@@ -113,7 +113,11 @@ var Domain = (() => {
     saveReview: () => saveReview,
     toggleSubtask: () => toggleSubtask,
     updateGoals: () => updateGoals,
-    weekSummary: () => weekSummary
+    weekSummary: () => weekSummary,
+    completeWorkout: () => completeWorkout,
+    workoutBonus: () => workoutBonus,
+    liftKey: () => liftKey,
+    maybeSpawnTrainingBoss: () => maybeSpawnTrainingBoss
   });
 
   // src/domain/achievements.ts
@@ -157,7 +161,20 @@ var Domain = (() => {
     { id: "meta-cumprida", name: "Meta Cumprida", description: "Alcance uma meta de atributo que voc\xEA definiu.", rarity: "uncommon", icon: "\u2691", rewardXp: 150, metric: "goalsDone", target: 1 },
     { id: "revisor", name: "Revisor", description: "Fa\xE7a 4 revis\xF5es semanais.", rarity: "uncommon", icon: "\u2630", rewardXp: 150, metric: "reviewsCount", target: 4 },
     { id: "corrente", name: "Corrente", description: "Conclua 3 miss\xF5es que dependiam de outra.", rarity: "rare", icon: "\u26D3", rewardXp: 200, metric: "chainSteps", target: 3 },
-    { id: "mestre-atributo", name: "Mestre de Atributo", description: "Alcance o Rank S em qualquer atributo.", rarity: "epic", icon: "\u272A", rewardXp: 600, metric: "bestAttributeRank", target: 5 }
+    { id: "mestre-atributo", name: "Mestre de Atributo", description: "Alcance o Rank S em qualquer atributo.", rarity: "epic", icon: "\u272A", rewardXp: 600, metric: "bestAttributeRank", target: 5 },
+    { id: "treino-registrado", name: "Treino Registrado", description: "Termine seu primeiro treino pela aba Treino.", rarity: "common", icon: "\u25B6", rewardXp: 40, metric: "workoutsTotal", target: 1 },
+    { id: "mes-de-ferro", name: "M\xEAs de Ferro", description: "Fa\xE7a 10 treinos no mesmo m\xEAs.", rarity: "rare", icon: "\u2692", rewardXp: 250, metric: "workoutsInMonth", target: 10 },
+    { id: "mes-inabalavel", name: "M\xEAs Inabal\xE1vel", description: "Fa\xE7a 20 treinos no mesmo m\xEAs.", rarity: "epic", icon: "\u2655", rewardXp: 600, metric: "workoutsInMonth", target: 20 },
+    { id: "supino-60", name: "Supino 60", description: "Levante 60 kg no supino.", rarity: "uncommon", icon: "\u2694", rewardXp: 150, metric: "benchKg", target: 60 },
+    { id: "supino-100", name: "100 kg no Supino", description: "Levante 100 kg no supino.", rarity: "epic", icon: "\u2694", rewardXp: 500, metric: "benchKg", target: 100 },
+    { id: "agachamento-100", name: "100 kg no Agachamento", description: "Agache com 100 kg.", rarity: "rare", icon: "\u265E", rewardXp: 350, metric: "squatKg", target: 100 },
+    { id: "terra-120", name: "Terra Pesado", description: "Levante 120 kg no levantamento terra.", rarity: "rare", icon: "\u2B22", rewardXp: 350, metric: "deadliftKg", target: 120 },
+    { id: "toneladas-10", name: "Dez Toneladas", description: "Acumule 10 toneladas de volume levantado.", rarity: "uncommon", icon: "\u2696", rewardXp: 150, metric: "liftedTons", target: 10 },
+    { id: "toneladas-100", name: "Cem Toneladas", description: "Acumule 100 toneladas de volume levantado.", rarity: "rare", icon: "\u2696", rewardXp: 400, metric: "liftedTons", target: 100 },
+    { id: "cardio-10h", name: "F\xF4lego de A\xE7o", description: "Acumule 10 horas de cardio.", rarity: "uncommon", icon: "\u2665", rewardXp: 150, metric: "cardioHours", target: 10 },
+    { id: "cardio-50h", name: "Cora\xE7\xE3o de Tit\xE3", description: "Acumule 50 horas de cardio.", rarity: "epic", icon: "\u2665", rewardXp: 600, metric: "cardioHours", target: 50 },
+    { id: "quebra-recordes", name: "Quebra-Recordes", description: "Bata 10 recordes de carga nos treinos.", rarity: "rare", icon: "\u2605", rewardXp: 300, metric: "workoutPRs", target: 10 },
+    { id: "quebra-tita", name: "Quebra-Tit\xE3", description: "Derrote um chefe de treino.", rarity: "uncommon", icon: "\u2620", rewardXp: 200, metric: "trainingBossesDefeated", target: 1 }
   ];
   var achievementById = (id) => ACHIEVEMENTS.find((a) => a.id === id);
   var achievementProgress = (a, stats) => ({
@@ -525,7 +542,11 @@ var Domain = (() => {
     const { current, best } = streaks(days, dayKey(now), restDays);
     const attributeLevels = {};
     for (const id of ATTRIBUTE_IDS) attributeLevels[id] = attributeProgress(state.attributeXp[id]).level;
-    const trainings = completions.filter((c) => c.attributes.includes("forca")).length;
+    const trainings = completions.filter((c) => c.attributes.includes("forca") && c.kind !== "workout" && c.bossKind !== "training").length + completions.filter((c) => c.kind === "workout" && c.wtype === "strength" && !c.linked).length;
+    const wk = completions.filter((c) => c.kind === "workout");
+    const perMonth = {};
+    for (const c of wk) perMonth[c.day.slice(0, 7)] = (perMonth[c.day.slice(0, 7)] || 0) + 1;
+    const bestLift = (k) => wk.reduce((mx, c) => Math.max(mx, c.lifts && c.lifts[k] || 0), 0);
     const studyMinutes = completions.filter((c) => c.attributes.includes("inteligencia")).reduce((sum, c) => sum + (c.durationMin || 0), 0);
     const uniq = [...new Set(days)].sort();
     const restN = new Set(restDays.map(dayNumber));
@@ -550,7 +571,7 @@ var Domain = (() => {
       activeDays: new Set(days).size,
       currentStreak: current,
       bestStreak: best,
-      missionsCompleted: completions.length,
+      missionsCompleted: completions.filter((c) => c.kind !== "workout").length,
       trainings,
       studyHours: Math.floor(studyMinutes / 60),
       unlockedCount: Object.keys(state.unlocked).length,
@@ -560,6 +581,15 @@ var Domain = (() => {
       comebacks,
       perfectWeeks,
       bossesDefeated: completions.filter((c) => c.kind === "boss").length,
+      trainingBossesDefeated: completions.filter((c) => c.kind === "boss" && c.bossKind === "training").length,
+      workoutsTotal: wk.length,
+      workoutsInMonth: Math.max(0, ...Object.values(perMonth)),
+      liftedTons: Math.floor(wk.filter((c) => c.wtype === "strength").reduce((sum, c) => sum + (c.volume || 0), 0) / 1e3),
+      cardioHours: Math.floor(wk.filter((c) => c.wtype === "cardio").reduce((sum, c) => sum + (c.durationMin || 0), 0) / 60),
+      workoutPRs: wk.reduce((sum, c) => sum + (c.prs || 0), 0),
+      benchKg: bestLift("supino"),
+      squatKg: bestLift("agachamento"),
+      deadliftKg: bestLift("terra"),
       purchases: (state.purchases || []).length,
       journalCount: (state.journal || []).filter((j) => j.text).length,
       focusSessions: completions.filter((c) => c.focus).length,
@@ -661,7 +691,8 @@ var Domain = (() => {
       durationMin: opts.focusMin != null ? opts.focusMin : mission.durationMin,
       kind: mission.type,
       chain: mission.requires ? true : void 0,
-      focus: opts.focus ? true : void 0
+      focus: opts.focus ? true : void 0,
+      bossKind: mission.bossKind
     };
     return {
       ...state,
@@ -768,6 +799,137 @@ var Domain = (() => {
     }
     return { state: { ...state, history: [...state.history, ...history].slice(-300) }, events };
   }
+
+  // ---- v0.5.4: treino vira XP de verdade
+  var WORKOUT_MIN_MINUTES = 5;
+  var WORKOUT_DAILY_CAP = 3;
+  var TRAINING_BOSS_NAMES = ["Colosso de Ferro", "Golem de A\u00E7o", "Tit\u00E3 das Anilhas", "Hidra do Suor", "Behemoth da Barra", "Minotauro da Esteira", "Gigante do Cansa\u00E7o", "Ogro da Meia-Carga"];
+  function liftKey(name) {
+    const n = String(name || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    if (/^supino/.test(n)) return "supino";
+    if (/^agachamento (livre|hack)/.test(n)) return "agachamento";
+    if (/^levantamento terra/.test(n)) return "terra";
+    return null;
+  }
+  function workoutBonus(w) {
+    const mins = Math.max(0, Number(w.mins) || 0);
+    const vol = Math.max(0, Number(w.volume) || 0);
+    let base, dmg;
+    if (w.type === "cardio") {
+      base = Math.min(100, Math.max(10, Math.round(mins * 1.2)));
+      dmg = Math.round(mins * 150);
+    } else if (w.type === "mobility") {
+      base = Math.min(40, Math.max(5, Math.round(mins * 0.8)));
+      dmg = Math.round(mins * 40);
+    } else {
+      const eff = Math.max(vol, mins * 60);
+      base = Math.min(110, 10 + Math.round(eff / 250));
+      dmg = Math.round(eff);
+    }
+    const prs = Math.min(5, Math.max(0, Math.floor(Number(w.prs) || 0)));
+    return { base, prs, prXp: prs * 15, xp: base + prs * 15, dmg };
+  }
+  var WK_GENERAL = /trein|academia|exerc|muscula/i;
+  var WK_CARDIO = /corrida|correr|cardio|caminhada|esteira|bike|pedal|nata/i;
+  var WK_FLEX = /alonga|mobilidade|yoga|flexib/i;
+  function pickWorkoutMissions(state, w, now) {
+    const ok = (m) => (m.type === "daily" || m.type === "weekly" || m.type === "special") && m.status === "active" && !isMissionDone(m, now) && isMissionScheduled(m, now) && !isMissionLocked(state, m, now) && !(m.deadline && new Date(m.deadline) < now) && !(m.subtasks && m.subtasks.length);
+    const match = (m) => w.type === "cardio" ? WK_GENERAL.test(m.name) || WK_CARDIO.test(m.name) : w.type === "mobility" ? WK_FLEX.test(m.name) : WK_GENERAL.test(m.name);
+    const list = state.missions.filter((m) => ok(m) && match(m));
+    const attr = w.type === "strength" ? "forca" : "vitalidade";
+    const best = (arr) => arr.find((m) => m.attributes.includes(attr)) || arr[0];
+    return [best(list.filter((m) => m.type !== "weekly")), best(list.filter((m) => m.type === "weekly"))].filter(Boolean);
+  }
+  function trainingBossHp(state, now) {
+    const since = dayKey(addDays(now, -13));
+    const dmg14 = state.completions.filter((c) => c.kind === "workout" && c.day >= since).reduce((sum, c) => sum + (c.tDmg || 0), 0);
+    return Math.round(Math.max(18e3, Math.min(12e4, dmg14 / 2 * 1.1)) / 500) * 500;
+  }
+  function maybeSpawnTrainingBoss(state, now = /* @__PURE__ */ new Date(), force = false) {
+    const key = weekKey(now);
+    if (!force) {
+      const since = dayKey(addDays(now, -28));
+      if (!state.completions.some((c) => c.kind === "workout" && c.day >= since)) return state;
+    }
+    if (state.missions.some((m) => m.type === "boss" && m.bossKind === "training" && m.progress.periodKey === key)) return state;
+    const hp = trainingBossHp(state, now);
+    const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    monday.setDate(monday.getDate() - (monday.getDay() + 6) % 7);
+    const boss = {
+      id: newId("m"),
+      name: "Chefe: " + TRAINING_BOSS_NAMES[Math.floor(dayNumber(key) / 7) % TRAINING_BOSS_NAMES.length],
+      description: "Cause " + hp.toLocaleString("pt-BR") + " de dano nesta semana treinando. Treino de peso: 1 de dano por kg levantado. Cardio: 150 por minuto. Alongamento: 40 por minuto.",
+      type: "boss",
+      bossKind: "training",
+      difficulty: "A",
+      xp: Math.max(80, Math.min(500, Math.round(hp / 100 / 10) * 10)),
+      attributes: ["forca", "vitalidade"],
+      deadline: addDays(monday, 7).toISOString(),
+      target: hp,
+      progress: { current: 0, periodKey: key },
+      status: "active",
+      createdAt: now.toISOString()
+    };
+    return { ...state, missions: [...state.missions, boss] };
+  }
+  function completeWorkout(state, w, now = /* @__PURE__ */ new Date()) {
+    if (!w || !w.id || state.completions.some((c) => c.workoutId === w.id)) return { state, events: [] };
+    if ((Number(w.mins) || 0) < WORKOUT_MIN_MINUTES) return { state, events: [] };
+    const today = dayKey(now);
+    if (state.completions.filter((c) => c.kind === "workout" && c.day === today).length >= WORKOUT_DAILY_CAP) {
+      return { state, events: [{ type: "workoutCap", cap: WORKOUT_DAILY_CAP }] };
+    }
+    const events = [];
+    let st = state;
+    const linkedNames = [];
+    let linkedForca = false;
+    for (const m of pickWorkoutMissions(st, w, now)) {
+      const r = m.type === "weekly" ? addProgress(st, m.id, 1, now) : completeMission(st, m.id, now);
+      if (r.state === st) continue;
+      st = r.state;
+      events.push(...r.events);
+      const done = r.events.some((e) => e.type === "xp");
+      linkedNames.push(m.type === "weekly" && !done ? m.name + " (+1)" : m.name);
+      if (done && m.attributes.includes("forca")) linkedForca = true;
+    }
+    const bonus = workoutBonus(w);
+    const attrs = w.type === "strength" ? ["forca"] : ["vitalidade"];
+    st = maybeSpawnTrainingBoss(st, now, true);
+    const split = splitXp(bonus.xp, attrs);
+    const attributeXp = { ...st.attributeXp };
+    for (const id of ATTRIBUTE_IDS) attributeXp[id] += split[id] != null ? split[id] : 0;
+    const lifts = {};
+    for (const k of Object.keys(w.lifts || {})) {
+      const kg = Math.min(600, Math.max(0, Number(w.lifts[k]) || 0));
+      if (kg > 0 && (k === "supino" || k === "agachamento" || k === "terra")) lifts[k] = kg;
+    }
+    const comp = {
+      id: newId("c"),
+      missionId: "workout:" + w.id,
+      missionName: String(w.name || "Treino").slice(0, 60) + " \u00B7 b\u00F4nus",
+      at: now.toISOString(),
+      day: today,
+      xp: bonus.xp,
+      attributes: attrs,
+      durationMin: Math.round(Number(w.mins) || 0),
+      kind: "workout",
+      workoutId: w.id,
+      wtype: w.type,
+      volume: Math.round(Math.max(0, Number(w.volume) || 0)),
+      prs: bonus.prs,
+      base: bonus.base,
+      prXp: bonus.prXp,
+      lifts,
+      linked: linkedForca ? true : void 0,
+      linkedNames,
+      tDmg: bonus.dmg
+    };
+    st = { ...st, totalXp: st.totalXp + bonus.xp, attributeXp, completions: [...st.completions, comp] };
+    events.push({ type: "workout", name: w.name, xp: bonus.xp, base: bonus.base, prXp: bonus.prXp, prs: bonus.prs, attribute: attrs[0], volume: comp.volume, mins: comp.durationMin, dmg: bonus.dmg, completionId: comp.id });
+    st = damageBoss(st, bonus.xp, now, events);
+    st = damageBoss(st, bonus.dmg, now, events, "training");
+    return settle(state, st, now, events);
+  }
   function starterMissions(now) {
     const m = (input) => buildMission(input, now);
     return [
@@ -776,8 +938,10 @@ var Domain = (() => {
       m({ name: "Ler 20 p\xE1ginas", description: "Leitura com aten\xE7\xE3o plena.", type: "daily", difficulty: "D", xp: 30, attributes: ["foco", "inteligencia"] }),
       m({ name: "Acordar no hor\xE1rio definido", description: "Levante sem adiar o alarme.", type: "daily", difficulty: "D", xp: REWARD_PRESETS.dailyHabit, attributes: ["disciplina", "vitalidade"] }),
       m({ name: "Organizar o ambiente", description: "Deixe seu espa\xE7o pronto para evoluir.", type: "daily", difficulty: "E", xp: REWARD_PRESETS.simpleTask, attributes: ["disciplina"] }),
+      m({ name: "Conversar com algu\xE9m", description: "Puxe papo com um colega, amigo ou algu\xE9m novo. Escute de verdade.", type: "daily", difficulty: "D", xp: 30, attributes: ["carisma"] }),
       m({ name: "Treinar 4 vezes", description: "Complete quatro treinos nesta semana.", type: "weekly", difficulty: "C", xp: REWARD_PRESETS.weeklyMission, attributes: ["forca", "disciplina"], target: 4 }),
       m({ name: "Completar 5 sess\xF5es de estudo", description: "Cinco sess\xF5es de estudo ao longo da semana.", type: "weekly", difficulty: "C", xp: REWARD_PRESETS.weeklyMission, attributes: ["inteligencia", "foco"], target: 5 }),
+      m({ name: "Fortalecer 3 conex\xF5es", description: "Ligue, visite ou marque um encontro com tr\xEAs pessoas nesta semana.", type: "weekly", difficulty: "C", xp: REWARD_PRESETS.weeklyMission, attributes: ["carisma", "disciplina"], target: 3 }),
       m({ name: "Concluir um projeto pessoal", description: "Um objetivo grande, dividido em passos. Defina o seu.", type: "special", difficulty: "B", xp: REWARD_PRESETS.specialMission, attributes: ["inteligencia", "disciplina"] })
     ];
   }
@@ -811,6 +975,10 @@ var Domain = (() => {
     { name: "Alerta: foco total", description: "Fa\xE7a 25 minutos de trabalho profundo, sem celular.", difficulty: "C", xp: 110, attributes: ["foco", "disciplina"], durationMin: 25 },
     { name: "Alerta: leitura expressa", description: "Leia 10 p\xE1ginas de um livro que voc\xEA escolheu.", difficulty: "D", xp: 80, attributes: ["foco", "inteligencia"] },
     { name: "Alerta: conex\xE3o", description: "Envie uma mensagem sincera a algu\xE9m que voc\xEA valoriza.", difficulty: "D", xp: 80, attributes: ["carisma"] },
+    { name: "Alerta: elogio sincero", description: "Fa\xE7a um elogio genu\xEDno a algu\xE9m nas pr\xF3ximas 24 horas.", difficulty: "E", xp: 70, attributes: ["carisma"] },
+    { name: "Alerta: ligar para algu\xE9m", description: "Ligue (de voz ou v\xEDdeo) para um amigo ou familiar que voc\xEA n\xE3o ouve h\xE1 tempos.", difficulty: "D", xp: 90, attributes: ["carisma", "vitalidade"] },
+    { name: "Alerta: dizer obrigado", description: "Agrade\xE7a por escrito ou pessoalmente a algu\xE9m que te ajudou, com um motivo espec\xEDfico.", difficulty: "E", xp: 70, attributes: ["carisma"] },
+    { name: "Alerta: sair da zona de conforto", description: "Inicie uma conversa com algu\xE9m que voc\xEA ainda n\xE3o conhece bem.", difficulty: "C", xp: 110, attributes: ["carisma", "disciplina"] },
     { name: "Alerta: reset de ambiente", description: "Organize sua mesa ou seu quarto por 10 minutos.", difficulty: "E", xp: 70, attributes: ["disciplina", "vitalidade"] }
   ];
   var EMERGENCY_COOLDOWN_HOURS = 72;
@@ -994,7 +1162,8 @@ var Domain = (() => {
           };
         }
         if (m.type === "boss" && m.progress.periodKey === wk && m.createdAt <= c.at) {
-          const cur = Math.max(0, m.progress.current - c.xp);
+          const dmg = m.bossKind === "training" ? c.kind === "workout" ? c.tDmg || 0 : 0 : c.xp;
+          const cur = Math.max(0, m.progress.current - dmg);
           if (m.status === "completed" && cur < m.target) {
             revertedBoss = m;
             return { ...m, progress: { current: cur, periodKey: wk }, status: "active" };
@@ -1097,7 +1266,7 @@ var Domain = (() => {
     const cutoff = dayKey(addDays(now, -28));
     const missions = state.missions.filter((m) => !(m.type === "boss" && m.progress.periodKey < cutoff));
     const pruned = missions.length !== state.missions.length;
-    if (missions.some((m) => m.type === "boss" && m.progress.periodKey === key)) return pruned ? { ...state, missions } : state;
+    if (missions.some((m) => m.type === "boss" && m.bossKind !== "training" && m.progress.periodKey === key)) return pruned ? { ...state, missions } : state;
     const hp = bossHp(state, now);
     const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     monday.setDate(monday.getDate() - (monday.getDay() + 6) % 7);
@@ -1117,10 +1286,11 @@ var Domain = (() => {
     };
     return { ...state, missions: [...missions, boss] };
   }
-  function damageBoss(state, xp, now, events) {
+  function damageBoss(state, xp, now, events, kind = "xp") {
     const key = weekKey(now);
+    if (!(xp > 0)) return state;
     const idx = state.missions.findIndex(
-      (m) => m.type === "boss" && m.status === "active" && m.progress.periodKey === key && (!m.deadline || new Date(m.deadline) >= now)
+      (m) => m.type === "boss" && (kind === "training" ? m.bossKind === "training" : m.bossKind !== "training") && m.status === "active" && m.progress.periodKey === key && (!m.deadline || new Date(m.deadline) >= now)
     );
     if (idx < 0) return state;
     const b = state.missions[idx];
@@ -1128,7 +1298,7 @@ var Domain = (() => {
     const defeated = current >= b.target;
     const updated = { ...b, progress: { current, periodKey: key }, status: defeated ? "completed" : "active" };
     let next = { ...state, missions: state.missions.map((m, i) => i === idx ? updated : m) };
-    events.push({ type: "bossHit", name: b.name, damage: current - b.progress.current, left: b.target - current });
+    events.push({ type: "bossHit", name: b.name, damage: current - b.progress.current, left: b.target - current, kind });
     if (defeated) {
       next = grantReward(next, updated, now, {});
       events.push({ type: "boss", name: b.name, amount: b.xp });
@@ -1345,7 +1515,7 @@ var Domain = (() => {
     const endIso = addDays(start, 7).toISOString();
     const startIso = start.toISOString();
     const inWeek = (h) => h.at >= startIso && h.at < endIso;
-    const boss = state.missions.find((m) => m.type === "boss" && m.progress.periodKey === mondayKey);
+    const boss = state.missions.find((m) => m.type === "boss" && m.bossKind !== "training" && m.progress.periodKey === mondayKey);
     const moods = (state.journal || []).filter((j) => days.includes(j.day) && j.mood).map((j) => j.mood);
     const best = perDay.reduce((a, d) => d.xp > a.xp ? d : a, { day: "", xp: 0 });
     return {
@@ -1356,7 +1526,7 @@ var Domain = (() => {
       perDay,
       activeDays: new Set(comps.map((c) => c.day)).size,
       restDays: (state.restDays || []).filter((d) => days.includes(d)).length,
-      missions: comps.length,
+      missions: comps.filter((c) => c.kind !== "workout").length,
       bestDay: best.xp > 0 ? best : null,
       attrXp,
       boss: boss ? { name: boss.name, status: boss.status === "completed" ? "defeated" : "escaped" } : null,

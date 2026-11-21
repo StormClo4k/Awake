@@ -73,10 +73,26 @@
       storageOk = true;
     } catch (e) { storageOk = false; }
   }
+  /** v0.5.3: perfis antigos recebem uma única vez as missões de Carisma (jogos novos já vêm com elas). */
+  var CARISMA_PACK = [
+    { name: 'Conversar com alguém', description: 'Puxe papo com um colega, amigo ou alguém novo. Escute de verdade.', type: 'daily', difficulty: 'D', xp: 30, attributes: ['carisma'] },
+    { name: 'Fortalecer 3 conexões', description: 'Ligue, visite ou marque um encontro com três pessoas nesta semana.', type: 'weekly', difficulty: 'C', xp: 200, attributes: ['carisma', 'disciplina'], target: 3 }
+  ];
+  function addCarismaPack() {
+    if (!game || game.carismaPack) return;
+    var g = game, added = 0;
+    CARISMA_PACK.forEach(function (input) {
+      if (g.missions.some(function (m) { return m.name === input.name; })) return;
+      try { g = D.addMission(g, input, now); added++; } catch (e) {}
+    });
+    game = Object.assign({}, g, { carismaPack: true });
+    if (added) setTimeout(function () { showToast('<div class="t1">Novas missões de Carisma</div><div class="t2">Adicionamos ' + added + ' missões para você evoluir o Carisma.</div>'); }, 600);
+  }
   function refresh() {
     if (!game) return;
     now = new Date();
-    var g = D.maybeSpawnBoss(D.maybeSpawnEmergency(D.expireMissions(game, now), now), now);
+    addCarismaPack();
+    var g = D.maybeSpawnTrainingBoss(D.maybeSpawnBoss(D.maybeSpawnEmergency(D.expireMissions(game, now), now), now), now);
     var u = D.updateSeason(g, now), gu = D.updateGoals(u.state, now);
     game = gu.state; save();
     var rev = u.events.concat(gu.events);
@@ -103,7 +119,7 @@
   }
   function setGame(g) { game = g ? D.normalizeState(g) : null; if (game) save(); render(); }
   var act = {
-    start: function (name) { game = D.createInitialState((name || '').trim() || 'Jogador'); save(); location.hash = '#/'; render(); },
+    start: function (name) { game = Object.assign({}, D.createInitialState((name || '').trim() || 'Jogador'), { carismaPack: true }); save(); location.hash = '#/'; render(); },
     progress: function (id) { apply(function (g) { return D.addProgress(g, id, 1); }); },
     complete: function (id) { apply(function (g) { return D.completeMission(g, id); }); },
     remove: function (id) { apply(function (g) { return { state: D.removeMission(g, id), events: [] }; }); },
@@ -174,8 +190,9 @@
   function bossCard(m) {
     var cur = D.missionProgress(m, now), done = D.isMissionDone(m, now), expired = D.isMissionExpired(m, now), left = Math.max(0, m.target - cur);
     var color = done ? 'var(--success)' : expired ? 'var(--mute)' : 'var(--danger)';
-    return panel('Chefe semanal', '<div class="mission boss" data-mid="' + m.id + '"><div class="nm">☠ ' + esc(m.name.replace(/^Chefe: /, '')) + '</div><div class="ds">' + esc(m.description) + '</div>' +
-      '<div style="margin-top:12px">' + bar(left / m.target, color, 12) + '<div class="xp-row"><span>' + (done ? 'DERROTADO' : expired ? 'ESCAPOU' : 'Vida: ' + left + ' / ' + m.target) +
+    var tr = m.bossKind === 'training', nf = function (n) { return Number(n).toLocaleString('pt-BR'); };
+    return panel(tr ? 'Chefe de treino' : 'Chefe semanal', '<div class="mission boss" data-mid="' + m.id + '"><div class="nm">☠ ' + esc(m.name.replace(/^Chefe: /, '')) + '</div><div class="ds">' + esc(m.description) + '</div>' +
+      '<div style="margin-top:12px">' + bar(left / m.target, color, 12) + '<div class="xp-row"><span>' + (done ? 'DERROTADO' : expired ? 'ESCAPOU' : 'Vida: ' + nf(left) + ' / ' + nf(m.target)) +
       '</span><span class="xp">Recompensa +' + m.xp + ' XP</span></div></div>' +
       (!done && !expired && m.deadline ? '<div class="xp-row"><span>' + deadlineText(m.deadline, now) + '</span><span></span></div>' : '') + '</div>',
       { accent: color, cls: done || expired ? 'dimmed' : '' });
@@ -254,7 +271,7 @@
     var weekly = game.missions.filter(function (m) { return m.type === 'weekly' && m.status === 'active'; });
     var weeklyDone = weekly.filter(function (m) { return D.isMissionDone(m, now); }).length;
     var next = D.nextAchievement(game, now);
-    var boss = game.missions.filter(function (m) { return m.type === 'boss' && m.progress.periodKey === D.weekKey(now); })[0];
+    var bosses = game.missions.filter(function (m) { return m.type === 'boss' && m.progress.periodKey === D.weekKey(now); });
     var doneToday = game.completions.filter(function (c) { return c.day === today && c.kind !== 'boss'; });
     var entry = (game.journal || []).filter(function (j) { return j.day === today; })[0];
     var jt = journalDraft != null ? journalDraft : (entry ? entry.text : ''), jm = journalMood != null ? journalMood : (entry && entry.mood) || 0;
@@ -272,7 +289,7 @@
       (lvl.isMax ? 'NÍVEL MÁXIMO' : lvl.xpIntoLevel + ' / ' + lvl.xpForNext + ' XP') + '</span><span style="color:var(--success)">Hoje +' + D.xpToday(game, now) + ' XP</span></div></div>',
       { accent: frameColor });
 
-    if (boss) html += bossCard(boss);
+    bosses.forEach(function (b) { html += bossCard(b); });
     html += (window.AW && AW.reviewBanner ? AW.reviewBanner() : '') + seasonMini() + (window.AW && AW.goalsMini ? AW.goalsMini() : '');
     html += panel('Atributos', '<div class="attr-grid">' + D.ATTRIBUTE_IDS.map(function (id) { return attrRow(id, game.attributeXp[id], false); }).join('') + '</div>');
 
@@ -319,7 +336,7 @@
       return chip(n > 0 ? TYPE_LABEL[t] + ' · ' + n : TYPE_LABEL[t], tab === t, 'data-act="tab" data-id="' + t + '"', t === 'emergency' || t === 'boss' ? 'var(--danger)' : null);
     }).join('') + '</div><a class="btn ghost" style="text-decoration:none" href="#/new">+ Nova missão</a>';
     var empty = tab === 'emergency' ? 'Nenhum alerta ativo. De vez em quando o sistema lança desafios inesperados com prazo de 24 horas.'
-      : tab === 'boss' ? 'Todo começo de semana um chefe aparece, depois que você concluir suas primeiras missões. Cada missão concluída causa dano igual ao seu XP.'
+      : tab === 'boss' ? 'Todo começo de semana um chefe aparece, depois que você concluir suas primeiras missões. Cada missão concluída causa dano igual ao seu XP. Quem treina pela aba Treino também enfrenta um chefe de treino, ferido pelo volume levantado e pelos minutos treinados.'
       : 'Nenhuma missão nesta categoria. Crie a sua!';
     html += list.length === 0 ? panel(null, '<p class="dim" style="margin:0;line-height:1.4">' + empty + '</p>') : list.map(missionCard).join('');
     return html;
@@ -405,6 +422,14 @@
     { n: 'Beber 2 L de água', d: '', t: 'daily', f: 'E', xp: 10, a: ['vitalidade'] },
     { n: 'Dormir cedo', d: 'Na cama no horário combinado.', t: 'daily', f: 'D', xp: 25, a: ['vitalidade', 'disciplina'] },
     { n: 'Caminhada', d: '30 minutos ao ar livre.', t: 'daily', f: 'D', xp: 30, a: ['vitalidade', 'forca'], dur: 30 },
+    { n: 'Conversar com alguém', d: 'Puxe papo com um colega, amigo ou alguém novo.', t: 'daily', f: 'D', xp: 30, a: ['carisma'] },
+    { n: 'Ligar para alguém querido', d: 'Uma ligação para um amigo ou familiar.', t: 'daily', f: 'D', xp: 30, a: ['carisma', 'vitalidade'] },
+    { n: 'Elogio sincero', d: 'Faça um elogio genuíno a alguém hoje.', t: 'daily', f: 'E', xp: 15, a: ['carisma'] },
+    { n: 'Agradecer alguém', d: 'Diga obrigado com um motivo específico.', t: 'daily', f: 'E', xp: 15, a: ['carisma'] },
+    { n: 'Falar em público', d: 'Apresente, opine em reunião ou grave um vídeo falando.', t: 'daily', f: 'B', xp: 100, a: ['carisma', 'foco'] },
+    { n: 'Praticar escuta ativa', d: 'Numa conversa, só pergunte e escute, sem interromper.', t: 'daily', f: 'D', xp: 30, a: ['carisma', 'foco'] },
+    { n: 'Networking da semana', d: 'Conecte-se com 3 pessoas da sua área ou de interesse.', t: 'weekly', f: 'C', xp: 200, a: ['carisma', 'inteligencia'], target: 3 },
+    { n: 'Encontro social', d: 'Marque e vá a um encontro com amigos ou familiares.', t: 'weekly', f: 'D', xp: 120, a: ['carisma', 'vitalidade'] },
     { n: 'Treino seg · qua · sex', d: 'Treino nos dias fixos da semana.', t: 'daily', f: 'C', xp: 60, a: ['forca', 'disciplina'], days: [1, 3, 5] },
     { n: 'Organizar a semana', d: 'Planejar compromissos e prioridades.', t: 'weekly', f: 'D', xp: 100, a: ['disciplina', 'foco'] },
     { n: 'Treinar 3 vezes', d: 'Três treinos nesta semana.', t: 'weekly', f: 'C', xp: 200, a: ['forca', 'disciplina'], target: 3 }
@@ -500,7 +525,9 @@
       if (e.type === 'achievement') lines.push('✦ Conquista desbloqueada: ' + esc(e.name));
       else if (e.type === 'attributeUp') lines.push('▲ ' + esc(e.attribute.toUpperCase()) + ' Nv. ' + e.to);
       else if (e.type === 'boss') lines.push('☠ Chefe derrotado: ' + esc(e.name.replace('Chefe: ', '')) + ' (+' + e.amount + ' XP)');
-      else if (e.type === 'bossHit' && e.left > 0) lines.push('⚔ Chefe −' + e.damage + ' de vida (restam ' + e.left + ')');
+      else if (e.type === 'bossHit' && e.left > 0) lines.push(e.kind === 'training' ? '⚔ Chefe de treino −' + e.damage.toLocaleString('pt-BR') + ' de vida (restam ' + e.left.toLocaleString('pt-BR') + ')' : '⚔ Chefe −' + e.damage + ' de vida (restam ' + e.left + ')');
+      else if (e.type === 'workout') lines.push('💪 Treino: +' + e.xp + ' XP em ' + (e.attribute === 'forca' ? 'Força' : 'Vitalidade') + (e.prs ? ' (' + e.prs + (e.prs === 1 ? ' recorde' : ' recordes') + ')' : ''));
+      else if (e.type === 'workoutCap') lines.push('Limite de ' + e.cap + ' treinos com XP por dia atingido.');
       else if (e.type === 'seasonTier') lines.push('★ Temporada ' + esc(e.name) + ': marco ' + e.tier + '/3 (+' + e.coins + ' moedas)');
       else if (e.type === 'seasonEnd') lines.push(e.success ? '★ Temporada concluída com sucesso!' : 'Temporada encerrada.');
       else if (e.type === 'unlock') lines.push('🔓 Missão liberada: ' + e.names.map(esc).join(', '));
@@ -514,7 +541,7 @@
     }
   }
   function showModal(events, levelUp, rankUp) {
-    var gained = events.reduce(function (s, e) { return s + (e.type === 'xp' || e.type === 'boss' ? e.amount : e.type === 'achievement' ? e.rewardXp : 0); }, 0);
+    var gained = events.reduce(function (s, e) { return s + (e.type === 'xp' || e.type === 'boss' ? e.amount : e.type === 'workout' ? e.xp : e.type === 'achievement' ? e.rewardXp : 0); }, 0);
     var achs = events.filter(function (e) { return e.type === 'achievement'; });
     var idx = game.rankIndex, color = D.RANKS[idx].color, level = D.levelProgress(game.totalXp).level;
     var prev = rankUp ? D.RANKS.findIndex(function (r) { return r.id === rankUp.from; }) : idx;

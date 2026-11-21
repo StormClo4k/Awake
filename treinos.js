@@ -372,7 +372,23 @@
     return null;
   }
 
+  function allExercises() {
+    var map = {};
+    ['gym', 'home'].forEach(function (pl) {
+      Object.keys(G[pl]).forEach(function (gid) {
+        G[pl][gid].parts.forEach(function (part) {
+          part.forEach(function (e) {
+            var id = slug(e[0]), x = map[id] || (map[id] = { id: id, name: e[0], cue: e[3], timed: e[4] === 't', iso: ISO.test(e[0]), groups: {}, places: {} });
+            x.groups[gid] = 1; x.places[pl] = 1;
+          });
+        });
+      });
+    });
+    MOB.forEach(function (m) { var id = slug(m[0]); map[id] = { id: id, name: m[0], cue: m[1], timed: true, iso: true, groups: { mobilidade: 1 }, places: { gym: 1, home: 1 } }; });
+    return Object.keys(map).map(function (k) { var x = map[k]; x.groups = Object.keys(x.groups); x.places = Object.keys(x.places); return x; }).sort(function (a, b) { return a.name < b.name ? -1 : 1; });
+  }
   window.Treinos = {
+    exercises: allExercises,
     LEVELS: LEVELS, PLACES: PLACES, STYLES: STYLES, GROUPS: GROUPS, build: build, cardioList: cardioList, cardio: cardio, parseLow: parseLow, slug: slug, nameOf: nameOf,
     WARMUP: 'Aquecimento (5 min): caminhada leve, bicicleta ou polichinelos; depois 1 ou 2 séries leves do primeiro exercício.',
     COOLDOWN: 'Volta à calma: 3–5 min de caminhada leve e alongamento dos músculos trabalhados.',
