@@ -16,6 +16,17 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet" />
+  <script>
+    /* aplica modo claro/escuro e animações antes do primeiro desenho, para não piscar */
+    (function () {
+      try {
+        var s = JSON.parse(localStorage.getItem('awakening-settings-v1') || '{}'), el = document.documentElement;
+        var light = s.mode === 'light' || (s.mode === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches);
+        el.setAttribute('data-mode', light ? 'light' : 'dark'); el.setAttribute('data-motion', s.motion === 'reduced' ? 'reduced' : 'auto');
+        if (light) { var m = document.querySelector('meta[name=theme-color]'); if (m) m.setAttribute('content', '#EAF0FA'); }
+      } catch (e) {}
+    })();
+  </script>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -26,5 +37,7 @@
   <script src="domain.js"></script>
   <script src="app.js"></script>
   <script src="features.js"></script>
+  <script src="treinos.js"></script>
+  <script src="workout.js"></script>
 </body>
 </html>

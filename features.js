@@ -235,7 +235,7 @@
   var pendingImport = null, pendingHabits = null;
 
   function buildBackup() {
-    return { app: 'awakening', format: 2, exportedAt: new Date().toISOString(), game: G(), settings: { theme: S.theme, remindOn: S.remindOn, remindTime: S.remindTime, backupEvery: S.backupEvery } };
+    return { app: 'awakening', format: 2, exportedAt: new Date().toISOString(), game: G(), workout: AW.workout ? AW.workout.export() : undefined, settings: { theme: S.theme, mode: S.mode, motion: S.motion, remindOn: S.remindOn, remindTime: S.remindTime, backupEvery: S.backupEvery } };
   }
   function markBackup() { S.lastBackup = new Date().toISOString(); S.backupSnooze = null; AW.saveSettings(); }
   function exportFile() {
@@ -255,8 +255,9 @@
     if (!v.ok) throw new Error('O progresso parece corrompido ou alterado: ' + v.problems.slice(0, 2).join(' '));
   }
   function summary(g) { var lv = D.levelProgress(g.totalXp).level; return esc(g.player.name) + ' · ' + esc(D.RANKS[g.rankIndex].name) + ' · Nv. ' + lv + ' · ' + fmt(g.totalXp) + ' XP · ' + g.completions.length + ' missões'; }
+  var pendingWorkout = null;
   function confirmImport(g, settings) {
-    pendingImport = { g: g, settings: settings };
+    pendingImport = { g: g, settings: settings, workout: pendingWorkout }; pendingWorkout = null;
     var cur = G();
     AW.openModal('<div class="sys">[ IMPORTAR PROGRESSO ]</div><h2>SUBSTITUIR PROGRESSO?</h2><p class="msg" style="font-style:normal;color:var(--text)">Vai entrar:<br><b>' + summary(g) + '</b></p>' +
       (cur ? '<p class="msg">Atual:<br>' + summary(cur) + '<br>Uma cópia do progresso atual fica guardada em “Cópias automáticas”.</p>' : '') +
@@ -266,12 +267,13 @@
     if (!pendingImport) return;
     var p = pendingImport; pendingImport = null;
     try { if (G()) AW.takeSnapshot(localStorage.getItem(AW.KEY), 'antes de importar', true); } catch (e) {}
-    if (p.settings) { ['theme', 'remindOn', 'remindTime', 'backupEvery'].forEach(function (k) { if (p.settings[k] != null) S[k] = p.settings[k]; }); }
+    if (p.settings) { ['theme', 'mode', 'motion', 'remindOn', 'remindTime', 'backupEvery'].forEach(function (k) { if (p.settings[k] != null) S[k] = p.settings[k]; }); }
+    if (p.workout && AW.workout) AW.workout.import(p.workout);
     AW.saveSettings(); AW.setGame(p.g); AW.closeModal(); toast('Progresso importado');
   };
   function importFromText(text) {
     var obj; try { obj = JSON.parse(text); } catch (e) { return toast('Arquivo inválido: não é um JSON.', true); }
-    try { var g = extractGame(obj); checkImported(g); confirmImport(g, obj.settings); } catch (e) { toast(e.message, true); }
+    try { var g = extractGame(obj); checkImported(g); pendingWorkout = obj.workout || null; confirmImport(g, obj.settings); } catch (e) { toast(e.message, true); }
   }
   AW.handlers['backup-now'] = exportFile;
   AW.handlers['backup-snooze'] = function () { S.backupSnooze = new Date(Date.now() + 86400000).toISOString(); AW.saveSettings(); AW.render(); };
@@ -287,7 +289,7 @@
     });
   };
   AW.handlers['code-import'] = function () {
-    decodeCode(val('import-code')).then(function (obj) { var g = extractGame(obj); checkImported(g); confirmImport(g, obj.settings); }).catch(function (e) { toast(e.message, true); });
+    decodeCode(val('import-code')).then(function (obj) { var g = extractGame(obj); checkImported(g); pendingWorkout = obj.workout || null; confirmImport(g, obj.settings); }).catch(function (e) { toast(e.message, true); });
   };
   AW.handlers['snap-restore'] = function (el) {
     try {
@@ -311,7 +313,7 @@
     var code = h.slice(9);
     history.replaceState(null, '', location.pathname + location.search + '#/');
     AW.render();
-    decodeCode(code).then(function (obj) { var g = extractGame(obj); checkImported(g); confirmImport(g, obj.settings); }).catch(function (e) { toast(e.message, true); });
+    decodeCode(code).then(function (obj) { var g = extractGame(obj); checkImported(g); pendingWorkout = obj.workout || null; confirmImport(g, obj.settings); }).catch(function (e) { toast(e.message, true); });
   }
 
   /* ------------------------------ importar hábitos (CSV e .ics) ------------------------------ */
@@ -457,7 +459,10 @@
     var lastB = S.lastBackup ? 'Último backup: ' + AW.dm(S.lastBackup) + '/' + new Date(S.lastBackup).getFullYear() : 'Você ainda não exportou nenhum backup.';
     return '<div class="between"><h1 class="screen-title">AJUSTES</h1><a class="close" href="#/character" aria-label="Fechar" style="text-decoration:none">✕</a></div>' +
       panel('Aparência', '<p class="label">TEMA DE COR</p><div class="row">' + chip('Clássico (azul)', S.theme !== 'rank', 'data-act="theme" data-id="classic"') + chip('Cor do meu rank', S.theme === 'rank', 'data-act="theme" data-id="rank"', D.RANKS[g.rankIndex].color) + '</div>' +
-        '<p class="help">No tema do rank, a interface muda de cor a cada vez que você sobe de rank.</p>') +
+        '<p class="help">No tema do rank, a interface muda de cor a cada vez que você sobe de rank.</p>' +
+        '<p class="label" style="margin-top:16px">MODO</p><div class="row">' + [['dark', 'Escuro'], ['light', 'Claro'], ['auto', 'Seguir o sistema']].map(function (o) { return chip(o[1], (S.mode || 'dark') === o[0], 'data-act="mode" data-id="' + o[0] + '"'); }).join('') + '</div>' +
+        '<p class="label" style="margin-top:16px">ANIMAÇÕES</p><div class="row">' + chip('Normais', S.motion !== 'reduced', 'data-act="motion" data-id="auto"') + chip('Reduzidas', S.motion === 'reduced', 'data-act="motion" data-id="reduced"') + '</div>' +
+        '<p class="help">“Reduzidas” desliga o brilho pulsante, as partículas e as transições. Com o sistema configurado para reduzir movimento, isso já vem ativo por padrão.</p>') +
       panel('Lembrete diário', '<div class="row" style="justify-content:space-between"><span style="font-weight:600">Avisar se houver missões pendentes</span>' + chip(S.remindOn ? 'Ligado' : 'Desligado', S.remindOn, 'data-act="remind-toggle"') + '</div>' +
         '<p class="label" style="margin-top:14px">HORÁRIO</p><input id="remind-time" type="time" class="input" style="max-width:160px" value="' + esc(S.remindTime) + '" />' +
         '<p class="help">' + permText + ' O aviso só chega com o app aberto ou instalado e recém-usado, porque um site sem servidor não consegue acordar o celular. Em dias de descanso ou sem pendências, nada é enviado.</p>' +
@@ -485,6 +490,8 @@
   }
   AW.views['#/settings'] = settingsView;
   AW.handlers['habits-file-pick'] = function () { var f = $('habits-file'); if (f) f.click(); };
+  AW.handlers.mode = function (el) { S.mode = el.getAttribute('data-id'); AW.saveSettings(); AW.render(); };
+  AW.handlers.motion = function (el) { S.motion = el.getAttribute('data-id'); AW.saveSettings(); AW.render(); };
   AW.handlers.theme = function (el) { S.theme = el.getAttribute('data-id'); AW.saveSettings(); AW.render(); };
   AW.handlers.install = function () {
     if (!deferredInstall) return;
@@ -684,7 +691,7 @@
     if (document.getElementById('modal').firstChild || !G()) return;
     var k = ev.key, list;
     if (k === 'n' || k === 'N') { location.hash = '#/new'; ev.preventDefault(); }
-    else if (k >= '1' && k <= '5') { location.hash = ['#/', '#/missions', '#/stats', '#/store', '#/character'][Number(k) - 1]; ev.preventDefault(); }
+    else if (k >= '1' && k <= '6') { location.hash = ['#/', '#/missions', '#/stats', '#/workout', '#/store', '#/character'][Number(k) - 1]; ev.preventDefault(); }
     else if (k === '?') { AW.handlers.shortcuts(); ev.preventDefault(); }
     else if (k === 'j' || k === 'k') {
       list = cards(); if (!list.length) return;
@@ -717,4 +724,105 @@
     document.addEventListener('visibilitychange', function () { if (!document.hidden) { checkReminder(); if (S.focus && !S.focus.finished) lockScreen(); } });
   });
   window.addEventListener('hashchange', function () { if (location.hash.indexOf('#/import=') === 0) checkHashImport(); });
+
+  /* ------------------------------ metas por atributo ------------------------------ */
+  var goalDraft = { attr: null, level: 0, days: 0 };
+  function goalLine(g, goal, full) {
+    var def = D.ATTRIBUTES[goal.attribute], p = D.goalProgress(g, goal, N());
+    var status = goal.doneAt ? 'Cumprida em ' + AW.dm(goal.doneAt) : p.status === 'late' ? 'Prazo vencido · faltam ' + fmt(p.remainingXp) + ' XP'
+      : fmt(p.remainingXp) + ' XP restantes' + (p.daysLeft !== null ? ' · ' + pl(Math.max(0, p.daysLeft), 'dia', 'dias') + (p.perDay ? ' · ~' + fmt(p.perDay) + ' XP/dia' : '') : '');
+    return '<div class="goal' + (goal.doneAt ? ' done' : p.status === 'late' ? ' late' : '') + '"><div class="gh"><span style="color:' + def.color + '">' + def.glyph + '</span><span>' + esc(def.name) + ' · Nv. ' + p.level + ' → ' + goal.targetLevel + '</span>' +
+      (full ? '<button class="mini gx" data-act="goal-del" data-id="' + goal.id + '" aria-label="Remover meta de ' + esc(def.name) + '">✕</button>' : '') + '</div>' +
+      bar(goal.doneAt ? 1 : p.ratio, goal.doneAt ? 'var(--success)' : def.color, 6) + '<div class="gs">' + status + '</div></div>';
+  }
+  AW.goalsMini = function () {
+    var g = G(), act = (g.goals || []).filter(function (x) { return !x.doneAt; });
+    if (!act.length) return '';
+    return panel('Metas', act.slice(0, 2).map(function (x) { return goalLine(g, x, false); }).join('') +
+      '<a class="small" style="color:var(--glow);display:inline-block;margin-top:10px" href="#/character">' + (act.length > 2 ? 'Ver as ' + act.length + ' metas' : 'Gerenciar metas') + '</a>', { accent: 'var(--glow)' });
+  };
+  AW.goalsPanel = function () {
+    var g = G(), goals = g.goals || [], act = goals.filter(function (x) { return !x.doneAt; }), done = goals.filter(function (x) { return x.doneAt; });
+    var cur = goalDraft.attr ? D.attributeProgress(g.attributeXp[goalDraft.attr]).level : 0;
+    if (goalDraft.attr && goalDraft.level <= cur) goalDraft.level = cur + 1;
+    var body = act.length ? act.map(function (x) { return goalLine(g, x, true); }).join('') : '<p class="dim" style="margin:0">Nenhuma meta ativa. Escolha um atributo e o nível que quer alcançar.</p>';
+    body += '<p class="label" style="margin-top:18px">NOVA META</p><div class="row">' + D.ATTRIBUTE_IDS.map(function (id) {
+      return chip(D.ATTRIBUTES[id].glyph + ' ' + D.ATTRIBUTES[id].short, goalDraft.attr === id, 'data-act="goal-attr" data-id="' + id + '"', D.ATTRIBUTES[id].color);
+    }).join('') + '</div>';
+    if (goalDraft.attr) {
+      body += '<p class="label" style="margin-top:14px">NÍVEL ALVO (ATUAL: ' + cur + ')</p><div class="stepper"><button type="button" data-act="goal-lv" data-id="-1" aria-label="Menos">−</button><b>' + goalDraft.level + '</b><button type="button" data-act="goal-lv" data-id="1" aria-label="Mais">+</button></div>' +
+        '<p class="label" style="margin-top:14px">PRAZO</p><div class="row">' + [[0, 'Sem prazo'], [30, '30 dias'], [60, '60 dias'], [90, '90 dias']].map(function (o) { return chip(o[1], goalDraft.days === o[0], 'data-act="goal-days" data-id="' + o[0] + '"'); }).join('') + '</div>' +
+        '<p class="help">Ao atingir o nível você ganha ' + Math.min(500, goalDraft.level * 10) + ' moedas. O XP necessário aparece no progresso da meta.</p>' +
+        '<div style="margin-top:12px"><button class="btn" data-act="goal-add">Criar meta</button></div>';
+    }
+    if (done.length) body += '<p class="help" style="margin-top:14px">✓ ' + pl(done.length, 'meta cumprida', 'metas cumpridas') + '</p>';
+    return panel('Metas por atributo', body, { accent: 'var(--glow)' });
+  };
+  AW.handlers['goal-attr'] = function (el) { goalDraft.attr = el.getAttribute('data-id'); goalDraft.level = 0; AW.render(); };
+  AW.handlers['goal-lv'] = function (el) { goalDraft.level = Math.min(D.MAX_ATTRIBUTE_LEVEL || 50, Math.max(1, goalDraft.level + Number(el.getAttribute('data-id')))); AW.render(); };
+  AW.handlers['goal-days'] = function (el) { goalDraft.days = Number(el.getAttribute('data-id')); AW.render(); };
+  AW.handlers['goal-add'] = function () {
+    var d = goalDraft;
+    if (AW.apply(function (g) { return D.addGoal(g, { attribute: d.attr, targetLevel: d.level, days: d.days }); })) { goalDraft = { attr: null, level: 0, days: 0 }; AW.render(); toast('Meta criada'); }
+  };
+  AW.handlers['goal-del'] = function (el) { AW.apply(function (g) { return D.removeGoal(g, el.getAttribute('data-id')); }); };
+
+  /* ------------------------------ revisão semanal ------------------------------ */
+  var reviewWeek = null, reviewDraft = null;
+  function weeksAvailable() {
+    var out = [], thisWeek = D.weekKey(N()), start = D.parseDay(thisWeek);
+    for (var i = 1; i <= 4; i++) out.push(D.dayKey(D.addDays(start, -7 * i)));
+    return out;
+  }
+  function weekLabel(k) { var s = D.parseDay(k), e = D.addDays(s, 6); return AW.dm(s.toISOString()) + ' – ' + AW.dm(e.toISOString()); }
+  AW.reviewBanner = function () {
+    var due = D.reviewDue(G(), N());
+    if (!due) return '';
+    return panel('Revisão semanal', '<p style="margin:0 0 12px;color:var(--dim)">Sua semana de ' + weekLabel(due) + ' terminou. Dois minutos de revisão rendem 15 moedas.</p><a class="btn" style="text-decoration:none" href="#/review">Revisar a semana</a>', { accent: 'var(--gold)' });
+  };
+  function reviewView() {
+    var g = G(), weeks = weeksAvailable(), due = D.reviewDue(g, N());
+    if (!reviewWeek || weeks.indexOf(reviewWeek) < 0) { reviewWeek = due || weeks[0]; reviewDraft = null; }
+    var done = (g.reviews || []).filter(function (r) { return r.weekKey === reviewWeek; })[0];
+    if (!reviewDraft) reviewDraft = { wins: done ? done.wins : '', blocks: done ? done.blocks : '', adjust: done ? done.adjust : '' };
+    var w = D.weekSummary(g, reviewWeek, N());
+    var delta = w.prevXp > 0 ? Math.round((w.xp - w.prevXp) / w.prevXp * 100) : null;
+    var maxA = Math.max.apply(null, [1].concat(D.ATTRIBUTE_IDS.map(function (id) { return w.attrXp[id]; })));
+    var html = '<div class="between"><h1 class="screen-title">REVISÃO</h1><a class="close" href="#/" aria-label="Fechar" style="text-decoration:none">✕</a></div>' +
+      '<div class="row">' + weeks.map(function (k) { var has = (g.reviews || []).some(function (r) { return r.weekKey === k; }); return chip((has ? '✓ ' : '') + weekLabel(k), reviewWeek === k, 'data-act="review-week" data-id="' + k + '"'); }).join('') + '</div>';
+    html += panel('Resumo · ' + weekLabel(reviewWeek),
+      '<div class="review-cmp"><div class="tile"><b>' + fmt(w.xp) + '</b><span>XP na semana' + (delta !== null ? ' (' + (delta >= 0 ? '+' : '') + delta + '% vs. anterior)' : '') + '</span></div>' +
+      '<div class="tile"><b>' + w.activeDays + '/7</b><span>dias ativos' + (w.restDays ? ' · ' + pl(w.restDays, 'descanso', 'descansos') : '') + '</span></div>' +
+      '<div class="tile"><b>' + w.missions + '</b><span>missões concluídas</span></div>' +
+      (w.mood !== null ? '<div class="tile"><b>' + AW.MOODS[Math.max(0, Math.min(4, Math.round(w.mood) - 1))] + '</b><span>humor médio</span></div>' : '') + '</div>' +
+      '<p class="label" style="margin-top:16px">XP POR ATRIBUTO</p><div class="stack" style="gap:8px">' + D.ATTRIBUTE_IDS.filter(function (id) { return w.attrXp[id] > 0; }).map(function (id) {
+        var def = D.ATTRIBUTES[id]; return '<div><div class="xp-row"><span style="color:' + def.color + '">' + def.glyph + ' ' + esc(def.name) + '</span><span>+' + fmt(w.attrXp[id]) + '</span></div>' + bar(w.attrXp[id] / maxA, def.color, 5) + '</div>';
+      }).join('') + (w.xp === 0 ? '<p class="dim" style="margin:0">Semana sem XP.</p>' : '') + '</div>' +
+      '<p class="help" style="margin-top:14px">' + [
+        w.bestDay ? 'Melhor dia: ' + AW.dm(D.parseDay(w.bestDay.day).toISOString()) + ' (' + fmt(w.bestDay.xp) + ' XP)' : '',
+        w.boss ? 'Chefe ' + (w.boss.status === 'defeated' ? 'derrotado' : 'escapou') + ': ' + esc(w.boss.name.replace('Chefe: ', '')) : '',
+        w.levelUps ? pl(w.levelUps, 'subida de nível', 'subidas de nível') : '',
+        w.rankUps.length ? 'Novo rank: ' + w.rankUps.join(', ') : '',
+        w.achievements.length ? pl(w.achievements.length, 'conquista', 'conquistas') : ''
+      ].filter(Boolean).join(' · ') + '</p>');
+    html += panel(done ? 'Sua revisão (editar)' : 'Sua revisão', '<p class="label">O QUE DEU CERTO</p><textarea id="rv-wins" class="input" maxlength="280" placeholder="Uma vitória da semana">' + esc(reviewDraft.wins) + '</textarea>' +
+      '<p class="label" style="margin-top:14px">O QUE ATRAPALHOU</p><textarea id="rv-blocks" class="input" maxlength="280" placeholder="Obstáculos, distrações, imprevistos">' + esc(reviewDraft.blocks) + '</textarea>' +
+      '<p class="label" style="margin-top:14px">O QUE AJUSTAR</p><textarea id="rv-adjust" class="input" maxlength="280" placeholder="Uma mudança para a próxima semana">' + esc(reviewDraft.adjust) + '</textarea>' +
+      '<div style="margin-top:14px"><button class="btn" data-act="review-save">' + (done ? 'Atualizar revisão' : 'Salvar revisão (+15 moedas)') + '</button></div>', { accent: 'var(--gold)' });
+    var past = (g.reviews || []).filter(function (r) { return r.weekKey !== reviewWeek; }).slice().reverse();
+    if (past.length) html += panel('Revisões anteriores', past.map(function (r) {
+      return '<div style="margin-bottom:12px"><div class="label">' + weekLabel(r.weekKey) + '</div>' + [['✓', r.wins], ['✕', r.blocks], ['→', r.adjust]].filter(function (x) { return x[1]; }).map(function (x) { return '<p class="rev-text">' + x[0] + ' ' + esc(x[1]) + '</p>'; }).join('') + '</div>';
+    }).join(''));
+    return html;
+  }
+  AW.views['#/review'] = reviewView;
+  document.addEventListener('input', function (ev) {
+    var id = ev.target && ev.target.id;
+    if (reviewDraft && (id === 'rv-wins' || id === 'rv-blocks' || id === 'rv-adjust')) reviewDraft[id.slice(3)] = ev.target.value;
+  });
+  AW.handlers['review-week'] = function (el) { reviewWeek = el.getAttribute('data-id'); reviewDraft = null; AW.render(); };
+  AW.handlers['review-save'] = function () {
+    var wk = reviewWeek, d = { weekKey: wk, wins: val('rv-wins'), blocks: val('rv-blocks'), adjust: val('rv-adjust') };
+    if (AW.apply(function (g) { return D.saveReview(g, d); })) { reviewDraft = null; toast('Revisão salva'); }
+  };
 })();

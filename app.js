@@ -40,7 +40,7 @@
   var journalDraft = null, journalMood = null;
   var SKEY = 'awakening-settings-v1', SNAPKEY = 'awakening-snapshots-v1';
   /** Ajustes do aparelho (tema, lembretes, backup). Ficam fora do progresso do jogo. */
-  var S = { theme: 'classic', remindOn: false, remindTime: '20:00', backupEvery: 7, lastBackup: null, backupSnooze: null, lastRemind: null, focus: null };
+  var S = { theme: 'classic', remindOn: false, remindTime: '20:00', backupEvery: 7, lastBackup: null, backupSnooze: null, lastRemind: null, focus: null, mode: 'dark', motion: 'auto' };
   var renderHooks = [];
 
   function loadSettings() { try { var raw = localStorage.getItem(SKEY); if (raw) Object.assign(S, JSON.parse(raw)); } catch (e) {} }
@@ -77,9 +77,10 @@
     if (!game) return;
     now = new Date();
     var g = D.maybeSpawnBoss(D.maybeSpawnEmergency(D.expireMissions(game, now), now), now);
-    var u = D.updateSeason(g, now);
-    game = u.state; save();
-    if (u.events.length) handleEvents(u.events);
+    var u = D.updateSeason(g, now), gu = D.updateGoals(u.state, now);
+    game = gu.state; save();
+    var rev = u.events.concat(gu.events);
+    if (rev.length) handleEvents(rev);
   }
   /** Executa uma mudança no jogo. `run` devolve { state, events, error }. Retorna true se aplicou. */
   function apply(run, silent) {
@@ -92,10 +93,10 @@
       return false;
     }
     game = r.state;
-    var u = D.updateSeason(game, now);
-    game = u.state;
+    var u = D.updateSeason(game, now), gu = D.updateGoals(u.state, now);
+    game = gu.state;
     save();
-    var evs = (r.events || []).concat(u.events);
+    var evs = (r.events || []).concat(u.events, gu.events);
     if (evs.length) handleEvents(evs);
     render();
     return true;
@@ -157,10 +158,11 @@
     return '<button type="button" class="chip' + (on ? ' on' : '') + '" ' + (color ? 'style="--c:' + color + '" ' : '') + data + '>' + esc(label) + '</button>';
   }
   function attrRow(id, xp, detailed) {
-    var def = D.ATTRIBUTES[id], p = D.attributeProgress(xp);
+    var def = D.ATTRIBUTES[id], p = D.attributeProgress(xp), ar = D.attributeRank(p.level);
     return '<div class="attr"><div class="top"><span style="color:' + def.color + '">' + def.glyph + '</span><span class="n">' + esc(detailed ? def.name : def.short) +
-      '</span><span class="lv" style="color:' + def.color + '">Nv. ' + p.level + '</span></div>' + bar(p.ratio, def.color, detailed ? 8 : 6) +
-      (detailed ? '<div class="sub">' + (p.isMax ? 'Nível máximo' : p.xpIntoLevel + '/' + p.xpForNext + ' XP') + ' · ' + esc(def.description) + '</div>' : '') + '</div>';
+      '</span><span class="arank" style="color:' + ar.rank.color + ';border-color:' + ar.rank.color + '" title="Rank do atributo: ' + esc(ar.rank.name) + '">' + esc(ar.rank.id) + '</span><span class="lv" style="color:' + def.color + '">Nv. ' + p.level + '</span></div>' + bar(p.ratio, def.color, detailed ? 8 : 6) +
+      (detailed ? '<div class="sub">' + (p.isMax ? 'Nível máximo' : p.xpIntoLevel + '/' + p.xpForNext + ' XP') + ' · ' + esc(def.description) +
+        (ar.nextLevel ? ' · próximo rank no Nv. ' + ar.nextLevel : '') + '</div>' : '') + '</div>';
   }
   var DAYS3 = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
   var MOODS = ['😞', '😕', '😐', '🙂', '😄'];
@@ -183,14 +185,24 @@
     var done = D.isMissionDone(m, now), expired = D.isMissionExpired(m, now), cur = D.missionProgress(m, now), sched = D.isMissionScheduled(m, now);
     var accent = m.type === 'emergency' ? 'var(--danger)' : done ? 'var(--success)' : 'var(--accent)';
     var attrs = m.attributes.map(function (a) { return '<span class="tag">' + esc(D.ATTRIBUTES[a].glyph + ' ' + D.ATTRIBUTES[a].short) + '</span>'; }).join('');
+    var locked = D.isMissionLocked(game, m, now), hasSubs = !!(m.subtasks && m.subtasks.length);
+    var doneSubs = m.progress && m.progress.periodKey === D.periodKey(m.type, now) ? (m.progress.done || []) : [];
+    var pre = m.requires ? game.missions.filter(function (x) { return x.id === m.requires; })[0] : null;
+    var nexts = game.missions.filter(function (x) { return x.requires === m.id && x.status === 'active'; });
     var progress = m.target > 1 ? '<div style="margin-top:10px">' + bar(cur / m.target, accent === 'var(--accent)' ? 'var(--accent)' : accent, 6) +
-      '<div class="xp-row"><span>' + cur + '/' + m.target + ' etapas</span></div></div>' : '';
+      '<div class="xp-row"><span>' + cur + '/' + m.target + (hasSubs ? ' subtarefas' : ' etapas') + '</span></div></div>' : '';
+    var subs = hasSubs ? '<div class="subs">' + m.subtasks.map(function (t) {
+      var on = done || doneSubs.indexOf(t.id) >= 0, can = !done && !expired && sched && !locked;
+      return '<button type="button" class="sub' + (on ? ' on' : '') + '" ' + (can ? 'data-act="subtask" data-id="' + m.id + '" data-sub="' + t.id + '"' : 'disabled') + '><i>' + (on ? '✓' : '') + '</i><span>' + esc(t.text) + '</span></button>';
+    }).join('') + '</div>' : '';
+    var chain = (pre ? '<div class="chain">⛓ Depende de “' + esc(pre.name) + '”</div>' : '') + (nexts.length ? '<div class="chain">→ Libera: ' + nexts.map(function (x) { return '“' + esc(x.name) + '”'; }).join(', ') + '</div>' : '');
     var comp = done ? todaysCompletion(m.id) : null;
     var days = m.days && m.days.length ? '<span>' + m.days.map(function (d) { return DAYS3[d]; }).join(' · ') + '</span>' : '';
     var action = done ? '<p class="status">✓ CONCLUÍDA</p>' + (comp ? '<button class="btn ghost small" style="margin-top:8px" data-act="undo" data-id="' + comp.id + '">↶ Desfazer</button>' : '')
       : expired ? '<p class="status" style="color:var(--danger)">✕ EXPIRADA</p>'
+      : locked ? '<p class="status" style="color:var(--mute)">🔒 BLOQUEADA · conclua “' + esc(pre ? pre.name : '') + '” antes</p>'
       : !sched ? '<p class="status" style="color:var(--mute)">FOLGA HOJE</p>'
-      : '<div class="actions">' + (m.target > 1 ? '<button class="btn" data-act="progress" data-id="' + m.id + '">+1 etapa</button>' : '<button class="btn" data-act="complete" data-id="' + m.id + '">Concluir missão</button>') +
+      : '<div class="actions">' + (hasSubs ? '' : m.target > 1 ? '<button class="btn" data-act="progress" data-id="' + m.id + '">+1 etapa</button>' : '<button class="btn" data-act="complete" data-id="' + m.id + '">Concluir missão</button>') +
         '<button class="btn ghost focus-btn" data-act="focus" data-id="' + m.id + '" title="Sessão de foco (F)" aria-label="Sessão de foco">◉ Focar</button></div>';
     return panel(null,
       '<button class="del" title="Remover missão" aria-label="Remover missão" data-act="remove" data-id="' + m.id + '" data-name="' + esc(m.name) + '">✕</button>' +
@@ -200,8 +212,8 @@
       '<div class="meta"><span class="xp">+' + m.xp + ' XP</span><span>' + TYPE_LABEL[m.type] + '</span>' + days +
       (m.durationMin ? '<span>' + m.durationMin + ' min</span>' : '') +
       (m.deadline && !done ? '<span style="color:' + (expired ? 'var(--danger)' : 'var(--gold)') + '">' + deadlineText(m.deadline, now) + '</span>' : '') + '</div>' +
-      '<div style="margin-top:8px">' + attrs + '</div>' + progress + '<div style="margin-top:12px">' + action + '</div></div>',
-      { accent: accent, cls: done || expired || !sched ? 'dimmed' : '' });
+      '<div style="margin-top:8px">' + attrs + '</div>' + chain + progress + subs + '<div style="margin-top:12px">' + action + '</div></div>',
+      { accent: accent, cls: done || expired || !sched || locked ? 'dimmed' : '' });
   }
 
   /* ------------------------------ telas ------------------------------ */
@@ -261,7 +273,7 @@
       { accent: frameColor });
 
     if (boss) html += bossCard(boss);
-    html += seasonMini();
+    html += (window.AW && AW.reviewBanner ? AW.reviewBanner() : '') + seasonMini() + (window.AW && AW.goalsMini ? AW.goalsMini() : '');
     html += panel('Atributos', '<div class="attr-grid">' + D.ATTRIBUTE_IDS.map(function (id) { return attrRow(id, game.attributeXp[id], false); }).join('') + '</div>');
 
     html += '<div class="stack"><div class="section"><b>MISSÕES DE HOJE</b><span class="dim small" style="font-weight:700">' + (isRest ? 'descanso' : pending.length + ' pendentes') + '</span></div>' +
@@ -286,7 +298,7 @@
     html += panel('Progresso semanal',
       '<div class="weekbars">' + week.map(function (d, i) {
         var dow = new Date(d.day + 'T12:00:00').getDay();
-        return '<div class="col"><div class="t"><i style="height:' + Math.max(4, d.xp / maxDay * 100) + '%;background:' + (d.xp > 0 ? 'var(--accent)' : 'rgba(120,150,210,.2)') + '"></i></div><span' +
+        return '<div class="col"><div class="t"><i style="height:' + Math.max(4, d.xp / maxDay * 100) + '%;background:' + (d.xp > 0 ? 'var(--accent)' : 'rgba(var(--tint),.25)') + '"></i></div><span' +
           (i === week.length - 1 ? ' style="color:var(--glow)"' : '') + '>' + WEEKDAY[dow] + '</span></div>';
       }).join('') + '</div><div class="xp-row"><span>' + weekTotal + ' XP em 7 dias</span>' + (weekly.length ? '<span>Semanais: ' + weeklyDone + '/' + weekly.length + '</span>' : '') + '</div>');
 
@@ -299,7 +311,7 @@
 
   var tab = 'daily';
   function viewMissions() {
-    var rk = function (m) { return D.isMissionExpired(m, now) ? 2 : D.isMissionDone(m, now) ? 1 : !D.isMissionScheduled(m, now) ? 1 : 0; };
+    var rk = function (m) { return D.isMissionExpired(m, now) ? 2 : D.isMissionDone(m, now) ? 1 : !D.isMissionScheduled(m, now) || D.isMissionLocked(game, m, now) ? 1 : 0; };
     var types = ['daily', 'weekly', 'special', 'emergency', 'boss'];
     var list = game.missions.filter(function (m) { return m.type === tab; }).sort(function (a, b) { return rk(a) - rk(b); });
     var html = '<h1 class="screen-title">MISSÕES</h1><div class="row">' + types.map(function (t) {
@@ -343,6 +355,7 @@
     html += titlesPanel();
     html += panel('Atributos', '<div class="stack" style="gap:18px">' + D.ATTRIBUTE_IDS.map(function (id) { return attrRow(id, game.attributeXp[id], true); }).join('') + '</div>');
 
+    html += window.AW && AW.goalsPanel ? AW.goalsPanel() : '';
     var forms = D.RANKS.map(function (r, i) {
       var reached = i <= game.rankIndex, current = i === game.rankIndex;
       return '<div class="form' + (current ? ' cur' : '') + '" style="--c:' + r.color + '">' + figure(i, current ? lvl.level : r.requirements.minLevel, r.color, 88, { locked: !reached, still: true }) +
@@ -397,15 +410,15 @@
     { n: 'Treinar 3 vezes', d: 'Três treinos nesta semana.', t: 'weekly', f: 'C', xp: 200, a: ['forca', 'disciplina'], target: 3 }
   ];
   function newForm() {
-    return { editId: null, name: '', description: '', type: 'daily', difficulty: 'C', xp: String(D.suggestedXp('daily', 'C')), xpEdited: false, attrs: [], target: 1, duration: 0, deadlineDays: null, days: [], error: null };
+    return { editId: null, name: '', description: '', type: 'daily', difficulty: 'C', xp: String(D.suggestedXp('daily', 'C')), xpEdited: false, attrs: [], target: 1, duration: 0, deadlineDays: null, days: [], subtasks: [], subDraft: '', requires: '', error: null };
   }
   function formFromMission(m) {
     return { editId: m.id, name: m.name, description: m.description || '', type: m.type, difficulty: m.difficulty, xp: String(m.xp), xpEdited: true, attrs: m.attributes.slice(),
-      target: m.target, duration: m.durationMin || 0, deadlineDays: null, days: (m.days || []).slice(), error: null };
+      target: m.target, duration: m.durationMin || 0, deadlineDays: null, days: (m.days || []).slice(), subtasks: (m.subtasks || []).map(function (t) { return t.text; }), subDraft: '', requires: m.requires || '', error: null };
   }
   function applyTemplate(i) {
     var t = TEMPLATES[i]; if (!t) return;
-    Object.assign(form, { name: t.n, description: t.d || '', type: t.t, difficulty: t.f, xp: String(t.xp), xpEdited: true, attrs: t.a.slice(), target: t.target || 1, duration: t.dur || 0, days: (t.days || []).slice(), deadlineDays: null, error: null });
+    Object.assign(form, { name: t.n, description: t.d || '', type: t.t, difficulty: t.f, xp: String(t.xp), xpEdited: true, attrs: t.a.slice(), target: t.target || 1, duration: t.dur || 0, days: (t.days || []).slice(), deadlineDays: null, subtasks: [], subDraft: '', requires: '', error: null });
   }
   function suggest() { if (!form.xpEdited) form.xp = String(D.suggestedXp(form.type, form.difficulty)); }
   function viewNew() {
@@ -428,24 +441,40 @@
         '<p class="label" style="margin-top:16px">ATRIBUTOS BENEFICIADOS</p><div class="row">' + D.ATTRIBUTE_IDS.map(function (id) {
           return chip(D.ATTRIBUTES[id].glyph + ' ' + D.ATTRIBUTES[id].name, f.attrs.indexOf(id) >= 0, 'data-act="f-attr" data-id="' + id + '"', D.ATTRIBUTES[id].color);
         }).join('') + '</div>') +
-      panel('Meta', '<p class="label">ETAPAS PARA CONCLUIR</p><div class="stepper"><button type="button" data-act="f-dec" aria-label="Menos">−</button><b>' + f.target + '</b><button type="button" data-act="f-inc" aria-label="Mais">+</button></div>' +
+      panel('Subtarefas', '<div class="subs edit">' + f.subtasks.map(function (t, i) {
+        return '<div class="sub-row"><span>' + esc(t) + '</span><button type="button" class="mini" data-act="f-sub-del" data-id="' + i + '" aria-label="Remover subtarefa ' + esc(t) + '">✕</button></div>';
+      }).join('') + '</div>' + (f.subtasks.length < 12 ? '<div class="sub-add"><input class="input" data-field="subDraft" maxlength="60" placeholder="Ex.: Preparar a mochila" value="' + esc(f.subDraft) + '" /><button type="button" class="btn ghost small" data-act="f-sub-add" style="width:auto">+ Adicionar</button></div>' : '') +
+        '<p class="help">Opcional. Com subtarefas, a missão vira uma lista: cada item marcado é uma etapa e o XP vem ao concluir todos (até 12).</p>') +
+      panel('Depende de', '<div class="row">' + chip('Nenhuma', !f.requires, 'data-act="f-req" data-id=""') + game.missions.filter(function (x) {
+        return x.status === 'active' && x.id !== f.editId && x.type !== 'boss' && x.type !== 'emergency' && !D.isMissionExpired(x, now);
+      }).map(function (x) { return chip(x.name.length > 26 ? x.name.slice(0, 25) + '…' : x.name, f.requires === x.id, 'data-act="f-req" data-id="' + x.id + '"'); }).join('') + '</div>' +
+        '<p class="help">Missão em cadeia: ela só aparece para cumprir depois que a escolhida for concluída (no mesmo período).</p>') +
+      (f.subtasks.length ? '' : panel('Meta', '<p class="label">ETAPAS PARA CONCLUIR</p><div class="stepper"><button type="button" data-act="f-dec" aria-label="Menos">−</button><b>' + f.target + '</b><button type="button" data-act="f-inc" aria-label="Mais">+</button></div>' +
         '<p class="help">Ex.: “Treinar 4 vezes” = 4 etapas. O XP só é pago ao completar todas.' + (isEdit ? ' A meta só muda se não houver etapas feitas neste período.' : '') + '</p>' +
         '<p class="label" style="margin-top:16px">DURAÇÃO (MIN)</p><div class="row">' + durs.map(function (d) { return chip(d === 0 ? 'Nenhuma' : String(d), f.duration === d, 'data-act="f-dur" data-id="' + d + '"'); }).join('') + '</div>' +
-        '<p class="help">Missões de Inteligência com duração somam nas horas de estudo.</p>') +
+        '<p class="help">Missões de Inteligência com duração somam nas horas de estudo.</p>')) +
       (f.error ? '<p class="error">' + esc(f.error) + '</p>' : '') +
       '<button class="btn" data-act="f-save">' + (isEdit ? 'Salvar alterações' : 'Criar missão') + '</button>';
+  }
+  function addSub() {
+    var t = (form.subDraft || '').trim();
+    if (!t) return;
+    if (form.subtasks.length >= 12) { form.error = 'No máximo 12 subtarefas.'; return render(); }
+    form.subtasks.push(t.slice(0, 60)); form.subDraft = ''; form.error = null; render();
+    var el = $app.querySelector('[data-field=subDraft]'); if (el) el.focus();
   }
   function saveForm() {
     var f = form, xp = parseInt(f.xp, 10);
     var input = {
-      name: f.name, description: f.description, type: f.type, difficulty: f.difficulty, xp: isFinite(xp) ? xp : undefined, attributes: f.attrs, target: f.target,
+      name: f.name, description: f.description, type: f.type, difficulty: f.difficulty, xp: isFinite(xp) ? xp : undefined, attributes: f.attrs, target: f.subtasks.length || f.target,
+      subtasks: f.subtasks.length ? f.subtasks : undefined, requires: f.requires || undefined,
       durationMin: f.duration || undefined, days: f.type === 'daily' ? f.days : undefined,
       deadline: f.type === 'special' && f.deadlineDays ? new Date(Date.now() + f.deadlineDays * 86400000).toISOString() : undefined
     };
     var problem = D.validateMissionInput(input);
     if (problem) { f.error = problem; return render(); }
     if (f.editId) {
-      var patch = { name: input.name, description: input.description, difficulty: input.difficulty, xp: input.xp, attributes: input.attributes, target: input.target, durationMin: input.durationMin, days: input.days };
+      var patch = { name: input.name, description: input.description, difficulty: input.difficulty, xp: input.xp, attributes: input.attributes, target: input.target, durationMin: input.durationMin, days: input.days, subtasks: f.subtasks.slice(), requires: f.requires || null };
       if (!act.update(f.editId, patch)) { f.error = lastError; return render(); }
       showToast('<div class="t1">Missão atualizada</div>');
     } else act.create(input);
@@ -474,6 +503,9 @@
       else if (e.type === 'bossHit' && e.left > 0) lines.push('⚔ Chefe −' + e.damage + ' de vida (restam ' + e.left + ')');
       else if (e.type === 'seasonTier') lines.push('★ Temporada ' + esc(e.name) + ': marco ' + e.tier + '/3 (+' + e.coins + ' moedas)');
       else if (e.type === 'seasonEnd') lines.push(e.success ? '★ Temporada concluída com sucesso!' : 'Temporada encerrada.');
+      else if (e.type === 'unlock') lines.push('🔓 Missão liberada: ' + e.names.map(esc).join(', '));
+      else if (e.type === 'goalDone') lines.push('🎯 Meta cumprida: ' + esc(D.ATTRIBUTES[e.attribute].name) + ' Nv. ' + e.level + ' (+' + e.coins + ' moedas)');
+      else if (e.type === 'review' && e.coins) lines.push('✎ Revisão semanal salva (+' + e.coins + ' moedas)');
       else if (e.type === 'purchase') lines.push('◆ Resgatado: ' + esc(e.name) + ' (−' + e.cost + ' moedas)');
     });
     if (xpEv || lines.length) {
@@ -495,6 +527,7 @@
       (rankUp ? '<div style="font-family:var(--display);color:' + color + ';letter-spacing:2px">' + esc(D.rankById(rankUp.to).name) + ' · ' + esc(D.rankById(rankUp.to).title) + '</div>' : '') +
       '<div class="gain">+' + gained + ' XP conquistados</div>' +
       achs.map(function (a) { return '<div class="ach-l">✦ Conquista: ' + esc(a.name) + ' (+' + a.rewardXp + ' XP)</div>'; }).join('') +
+      events.filter(function (e) { return e.type === 'goalDone'; }).map(function (e) { return '<div class="ach-l">🎯 Meta cumprida: ' + esc(D.ATTRIBUTES[e.attribute].name) + ' Nv. ' + e.level + ' (+' + e.coins + ' moedas)</div>'; }).join('') +
       '<p class="msg">“' + esc(msg) + '”</p><button class="btn" style="margin-top:8px" data-act="close-modal">Continuar</button></div></div>';
     $modal.innerHTML = html;
     var ov = $modal.firstChild, fx = '<div class="ring" style="--c:' + color + '"></div>';
@@ -513,16 +546,20 @@
   }
 
   /* ------------------------------ render & rotas ------------------------------ */
-  var TABS = [['#/', '◈', 'Painel'], ['#/missions', '⚔', 'Missões'], ['#/stats', '▦', 'Stats'], ['#/store', '◆', 'Loja'], ['#/character', '♛', 'Perfil']];
+  var TABS = [['#/', '◈', 'Painel'], ['#/missions', '⚔', 'Missões'], ['#/stats', '▦', 'Stats'], ['#/workout', '⚒', 'Treino'], ['#/store', '◆', 'Loja'], ['#/character', '♛', 'Perfil']];
   var views = {}, handlers = {};
   function route() { return (location.hash || '#/').replace(/\/$/, '') || '#'; }
   function hexRgb(h) { var n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
   function mix(rgb, k) { return rgb.map(function (v) { return Math.round(v + (255 - v) * k); }); }
   /** Tema: "classic" mantém o azul; "rank" pinta a interface com a cor do rank atual. */
+  function isLight() { return S.mode === 'light' || (S.mode === 'auto' && !!window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches); }
   function applyTheme() {
-    var st = document.documentElement.style;
+    var el = document.documentElement, st = el.style, light = isLight();
+    el.setAttribute('data-mode', light ? 'light' : 'dark'); el.setAttribute('data-motion', S.motion === 'reduced' ? 'reduced' : 'auto');
+    var tc = document.querySelector('meta[name=theme-color]'); if (tc) tc.setAttribute('content', light ? '#EAF0FA' : '#03050B');
     if (S.theme === 'rank' && game) {
       var rgb = hexRgb(D.RANKS[game.rankIndex].color), gl = mix(rgb, 0.35);
+      if (light) { rgb = rgb.map(function (v) { return Math.round(v * 0.7); }); gl = rgb.map(function (v) { return Math.round(v * 0.85); }); }
       st.setProperty('--accent', 'rgb(' + rgb.join(',') + ')'); st.setProperty('--glow', 'rgb(' + gl.join(',') + ')'); st.setProperty('--rgb', rgb.join(','));
     } else { st.removeProperty('--accent'); st.removeProperty('--glow'); st.removeProperty('--rgb'); }
   }
@@ -589,6 +626,10 @@
       case 'f-dec': form.target = Math.max(1, form.target - 1); return render();
       case 'f-inc': form.target = Math.min(100, form.target + 1); return render();
       case 'f-dur': form.duration = Number(id); return render();
+      case 'subtask': return apply(function (g) { return D.toggleSubtask(g, id, el.getAttribute('data-sub')); });
+      case 'f-sub-add': return addSub();
+      case 'f-sub-del': form.subtasks.splice(Number(id), 1); return render();
+      case 'f-req': form.requires = id || ''; return render();
       case 'f-save': return saveForm();
       default: if (handlers[a]) return handlers[a](el, ev);
     }
@@ -603,6 +644,7 @@
   document.addEventListener('keydown', function (ev) {
     if (ev.key === 'Enter' && ev.target.id === 'onb-name') act.start(ev.target.value);
     if (ev.key === 'Enter' && ev.target.id === 'char-name') ev.target.blur();
+    if (ev.key === 'Enter' && ev.target.getAttribute && ev.target.getAttribute('data-field') === 'subDraft') { ev.preventDefault(); addSub(); }
     if (ev.key === 'Escape' && $modal.firstChild) closeModal();
   });
   window.addEventListener('hashchange', function () {
@@ -622,7 +664,7 @@
 
   /** Ponte para features.js (estatísticas, loja, backup, foco, PWA, atalhos...). */
   window.AW = {
-    D: D, S: S, KEY: KEY, SKEY: SKEY, SNAPKEY: SNAPKEY, views: views, handlers: handlers, onRender: renderHooks,
+    D: D, S: S, isLight: isLight, KEY: KEY, SKEY: SKEY, SNAPKEY: SNAPKEY, views: views, handlers: handlers, onRender: renderHooks,
     getGame: function () { return game; }, getNow: function () { return now; }, setGame: setGame, isStorageOk: function () { return storageOk; },
     apply: apply, act: act, render: render, route: route, save: save, load: load, saveSettings: saveSettings, takeSnapshot: takeSnapshot, applyTheme: applyTheme,
     showToast: showToast, openModal: openModal, closeModal: closeModal, handleEvents: handleEvents,
@@ -640,6 +682,7 @@
     }, 60000);
     // Se o progresso for alterado em outra aba, sincroniza.
     window.addEventListener('storage', function (e) { if (e.key === KEY) { load(); render(); } });
+    try { matchMedia('(prefers-color-scheme: light)').addEventListener('change', function () { if (S.mode === 'auto') applyTheme(); }); } catch (e) {}
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();

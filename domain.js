@@ -100,7 +100,20 @@ var Domain = (() => {
     toggleRestDay: () => toggleRestDay,
     undoCompletion: () => undoCompletion,
     updateMission: () => updateMission,
-    updateSeason: () => updateSeason
+    updateSeason: () => updateSeason,
+    ATTRIBUTE_RANK_LEVELS: () => ATTRIBUTE_RANK_LEVELS,
+    addGoal: () => addGoal,
+    attributeRank: () => attributeRank,
+    attributeXpForLevel: () => attributeXpForLevel,
+    goalProgress: () => goalProgress,
+    isMissionLocked: () => isMissionLocked,
+    parseDay: () => parseDay,
+    removeGoal: () => removeGoal,
+    reviewDue: () => reviewDue,
+    saveReview: () => saveReview,
+    toggleSubtask: () => toggleSubtask,
+    updateGoals: () => updateGoals,
+    weekSummary: () => weekSummary
   });
 
   // src/domain/achievements.ts
@@ -140,7 +153,11 @@ var Domain = (() => {
     { id: "foco-profundo", name: "Foco Profundo", description: "Complete 10 sess\xF5es de foco.", rarity: "rare", icon: "\u25C9", rewardXp: 300, metric: "focusSessions", target: 10 },
     { id: "semana-perfeita", name: "Semana Perfeita", description: "Evolua nos 7 dias de uma mesma semana.", rarity: "epic", icon: "\u2606", rewardXp: 500, metric: "perfectWeeks", target: 1 },
     { id: "equilibrio", name: "Equil\xEDbrio", description: "Todos os atributos no n\xEDvel 10.", rarity: "epic", icon: "\u2726", rewardXp: 700, metric: "minAttributeLevel", target: 10 },
-    { id: "exterminador", name: "Exterminador", description: "Derrote 10 chefes semanais.", rarity: "epic", icon: "\u2716", rewardXp: 900, metric: "bossesDefeated", target: 10 }
+    { id: "exterminador", name: "Exterminador", description: "Derrote 10 chefes semanais.", rarity: "epic", icon: "\u2716", rewardXp: 900, metric: "bossesDefeated", target: 10 },
+    { id: "meta-cumprida", name: "Meta Cumprida", description: "Alcance uma meta de atributo que voc\xEA definiu.", rarity: "uncommon", icon: "\u2691", rewardXp: 150, metric: "goalsDone", target: 1 },
+    { id: "revisor", name: "Revisor", description: "Fa\xE7a 4 revis\xF5es semanais.", rarity: "uncommon", icon: "\u2630", rewardXp: 150, metric: "reviewsCount", target: 4 },
+    { id: "corrente", name: "Corrente", description: "Conclua 3 miss\xF5es que dependiam de outra.", rarity: "rare", icon: "\u26D3", rewardXp: 200, metric: "chainSteps", target: 3 },
+    { id: "mestre-atributo", name: "Mestre de Atributo", description: "Alcance o Rank S em qualquer atributo.", rarity: "epic", icon: "\u272A", rewardXp: 600, metric: "bestAttributeRank", target: 5 }
   ];
   var achievementById = (id) => ACHIEVEMENTS.find((a) => a.id === id);
   var achievementProgress = (a, stats) => ({
@@ -545,7 +562,11 @@ var Domain = (() => {
       bossesDefeated: completions.filter((c) => c.kind === "boss").length,
       purchases: (state.purchases || []).length,
       journalCount: (state.journal || []).filter((j) => j.text).length,
-      focusSessions: completions.filter((c) => c.focus).length
+      focusSessions: completions.filter((c) => c.focus).length,
+      goalsDone: (state.goals || []).filter((g) => g.doneAt).length,
+      reviewsCount: (state.reviews || []).length,
+      chainSteps: completions.filter((c) => c.chain).length,
+      bestAttributeRank: Math.max(...ATTRIBUTE_IDS.map((id) => attributeRank(attributeLevels[id]).index))
     };
   }
 
@@ -574,6 +595,9 @@ var Domain = (() => {
     if (input.target !== void 0 && (input.target < 1 || input.target > 100)) {
       return "A meta deve ficar entre 1 e 100 etapas.";
     }
+    if (input.subtasks !== void 0 && (!Array.isArray(input.subtasks) || input.subtasks.length > 12 || input.subtasks.some((t) => !String(t).trim() || String(t).trim().length > 60))) {
+      return "Subtarefas inv\xE1lidas (at\xE9 12, com at\xE9 60 caracteres cada).";
+    }
     if (input.days !== void 0 && (!Array.isArray(input.days) || input.days.some((d) => !Number.isInteger(d) || d < 0 || d > 6))) {
       return "Dias da semana inv\xE1lidos.";
     }
@@ -583,6 +607,7 @@ var Domain = (() => {
     var _a, _b, _c;
     const error = validateMissionInput(input);
     if (error) throw new Error(error);
+    const subtasks = Array.isArray(input.subtasks) && input.subtasks.length ? input.subtasks.map((t) => ({ id: newId("t"), text: String(t).trim() })) : void 0;
     return {
       id: newId("m"),
       name: input.name.trim(),
@@ -593,7 +618,9 @@ var Domain = (() => {
       attributes: [...new Set(input.attributes)],
       deadline: input.deadline,
       days: input.type === "daily" && Array.isArray(input.days) && input.days.length > 0 && input.days.length < 7 ? [...new Set(input.days)].sort() : void 0,
-      target: Math.round((_c = input.target) != null ? _c : 1),
+      target: subtasks ? subtasks.length : Math.round((_c = input.target) != null ? _c : 1),
+      subtasks,
+      requires: input.requires || void 0,
       progress: { current: 0, periodKey: periodKey(input.type, now) },
       status: "active",
       durationMin: input.durationMin,
@@ -601,6 +628,7 @@ var Domain = (() => {
     };
   }
   function addMission(state, input, now = /* @__PURE__ */ new Date()) {
+    if (input.requires && !state.missions.some((m) => m.id === input.requires)) throw new Error("A miss\xE3o da qual esta depende n\xE3o existe.");
     return { ...state, missions: [...state.missions, buildMission(input, now)] };
   }
   function removeMission(state, missionId) {
@@ -632,6 +660,7 @@ var Domain = (() => {
       attributes: mission.attributes,
       durationMin: opts.focusMin != null ? opts.focusMin : mission.durationMin,
       kind: mission.type,
+      chain: mission.requires ? true : void 0,
       focus: opts.focus ? true : void 0
     };
     return {
@@ -646,15 +675,16 @@ var Domain = (() => {
     if (!mission || mission.type === "boss" || mission.status !== "active" || isMissionDone(mission, now)) {
       return { state, events: [] };
     }
-    if (!isMissionScheduled(mission, now)) return { state, events: [] };
+    if (!isMissionScheduled(mission, now) || isMissionLocked(state, mission, now)) return { state, events: [] };
     if (mission.deadline && new Date(mission.deadline) < now) return { state, events: [] };
     const key = periodKey(mission.type, now);
-    const previous = mission.progress.periodKey === key ? mission.progress.current : 0;
+    const same = mission.progress.periodKey === key;
+    const previous = same ? mission.progress.current : 0;
     const current = Math.min(mission.target, previous + Math.max(1, Math.floor(amount)));
     const completed = current >= mission.target;
     const updated = {
       ...mission,
-      progress: { current, periodKey: key },
+      progress: { current, periodKey: key, done: same ? mission.progress.done : void 0 },
       status: completed && key === "once" ? "completed" : mission.status
     };
     const draft = {
@@ -665,13 +695,25 @@ var Domain = (() => {
     const rewarded = grantReward(draft, mission, now, opts);
     const comp = rewarded.completions[rewarded.completions.length - 1];
     const events = [{ type: "xp", amount: mission.xp, missionName: mission.name, completionId: comp.id }];
+    const freed = state.missions.filter((m) => m.requires === mission.id && m.status === "active").map((m) => m.name);
+    if (freed.length) events.push({ type: "unlock", names: freed });
     const hit = damageBoss(rewarded, mission.xp, now, events);
     return settle(state, hit, now, events);
   }
   function completeMission(state, missionId, now = /* @__PURE__ */ new Date(), opts = {}) {
     const mission = state.missions.find((m) => m.id === missionId);
     if (!mission) return { state, events: [] };
-    return addProgress(state, missionId, mission.target - missionProgress(mission, now), now, opts);
+    let st = state;
+    if (mission.subtasks && mission.subtasks.length) {
+      const key = periodKey(mission.type, now);
+      const ids = mission.subtasks.map((t) => t.id);
+      st = {
+        ...state,
+        missions: state.missions.map((m) => m.id === missionId ? { ...m, progress: { current: Math.max(0, ids.length - 1), periodKey: key, done: ids.slice(0, -1) } } : m)
+      };
+      return addProgress(st, missionId, 1, now, opts);
+    }
+    return addProgress(st, missionId, mission.target - missionProgress(mission, now), now, opts);
   }
   function settle(before, draft, now, events) {
     let state = draft;
@@ -758,7 +800,10 @@ var Domain = (() => {
       seasonCoins: 0,
       season: null,
       seasonHistory: [],
-      seasonBadges: []
+      seasonBadges: [],
+      goals: [],
+      reviews: [],
+      bonusCoins: 0
     };
   }
   var EMERGENCY_TEMPLATES = [
@@ -842,6 +887,9 @@ var Domain = (() => {
       season: s2.season || null,
       seasonHistory: s2.seasonHistory || [],
       seasonBadges: s2.seasonBadges || [],
+      goals: s2.goals || [],
+      reviews: s2.reviews || [],
+      bonusCoins: s2.bonusCoins || 0,
       player: { ...p, title: p.title || null, frame: p.frame != null ? p.frame : null }
     };
   }
@@ -850,7 +898,7 @@ var Domain = (() => {
   }
   var coinsForXp = (xp) => Math.max(1, Math.round(xp / 10));
   function coinBalance(state) {
-    const earned = state.completions.reduce((sum, c) => sum + coinsForXp(c.xp), 0) + (state.seasonCoins || 0);
+    const earned = state.completions.reduce((sum, c) => sum + coinsForXp(c.xp), 0) + (state.seasonCoins || 0) + (state.bonusCoins || 0);
     const spent = (state.purchases || []).reduce((sum, p) => sum + p.cost, 0);
     return earned - spent;
   }
@@ -868,12 +916,38 @@ var Domain = (() => {
       attributes: has("attributes") ? patch.attributes : m.attributes,
       target: has("target") ? patch.target : m.target,
       durationMin: has("durationMin") ? patch.durationMin : m.durationMin,
-      days: has("days") ? patch.days : m.days
+      days: has("days") ? patch.days : m.days,
+      subtasks: has("subtasks") ? patch.subtasks : void 0
     };
     const error = validateMissionInput(input);
     if (error) return { state, error };
-    if (Math.round(input.target) !== m.target && missionProgress(m, now) > 0) {
-      return { state, error: "Não dá para mudar a meta com etapas já feitas neste período." };
+    let subtasks = m.subtasks;
+    if (has("subtasks")) {
+      const pool = (m.subtasks || []).slice();
+      subtasks = patch.subtasks.length ? patch.subtasks.map((t) => {
+        const text = String(t).trim();
+        const i = pool.findIndex((x) => x.text === text);
+        if (i >= 0) return pool.splice(i, 1)[0];
+        return { id: newId("t"), text };
+      }) : void 0;
+    }
+    const newTarget = subtasks ? subtasks.length : Math.round(input.target);
+    const changedSubs = has("subtasks") && JSON.stringify((subtasks || []).map((t) => t.id)) !== JSON.stringify((m.subtasks || []).map((t) => t.id));
+    if ((newTarget !== m.target || changedSubs) && missionProgress(m, now) > 0) {
+      return { state, error: "N\u00E3o d\u00E1 para mudar a meta ou as subtarefas com etapas j\u00E1 feitas neste per\u00EDodo." };
+    }
+    let requires = m.requires;
+    if (has("requires")) {
+      requires = patch.requires || void 0;
+      if (requires) {
+        if (requires === m.id) return { state, error: "Uma miss\u00E3o n\u00E3o pode depender dela mesma." };
+        if (!state.missions.some((x) => x.id === requires)) return { state, error: "A miss\u00E3o da qual esta depende n\u00E3o existe." };
+        let cur = state.missions.find((x) => x.id === requires);
+        for (let i = 0; cur && cur.requires && i < 50; i++) {
+          if (cur.requires === m.id) return { state, error: "Isso criaria um ciclo de depend\u00EAncias." };
+          cur = state.missions.find((x) => x.id === cur.requires);
+        }
+      }
     }
     const updated = {
       ...m,
@@ -882,7 +956,10 @@ var Domain = (() => {
       difficulty: input.difficulty,
       xp: Math.round(input.xp),
       attributes: [...new Set(input.attributes)],
-      target: Math.round(input.target),
+      target: newTarget,
+      subtasks,
+      requires,
+      progress: changedSubs || newTarget !== m.target ? { current: 0, periodKey: m.progress.periodKey } : m.progress,
       durationMin: input.durationMin || void 0,
       days: m.type === "daily" && Array.isArray(input.days) && input.days.length > 0 && input.days.length < 7 ? [...new Set(input.days)].sort() : void 0,
       deadline: has("deadline") ? patch.deadline : m.deadline
@@ -912,7 +989,7 @@ var Domain = (() => {
           if (m.progress.periodKey !== periodKey(m.type, at)) return m;
           return {
             ...m,
-            progress: { current: Math.max(0, m.target - 1), periodKey: m.progress.periodKey },
+            progress: { current: Math.max(0, m.target - 1), periodKey: m.progress.periodKey, done: m.progress.done ? m.progress.done.slice(0, -1) : void 0 },
             status: m.status === "completed" ? "active" : m.status
           };
         }
@@ -1134,6 +1211,10 @@ var Domain = (() => {
       if (state.unlocked[a.id]) out.push({ id: "ach:" + a.id, label: a.name, color: RARITY_COLOR[a.rarity] });
     });
     (state.seasonBadges || []).forEach((b) => out.push({ id: "badge:" + b.id, label: "Insígnia: " + b.name, color: "#FFD166" }));
+    ATTRIBUTE_IDS.forEach((id) => {
+      const r = attributeRank(attributeProgress(state.attributeXp[id]).level);
+      if (r.index >= 2) out.push({ id: "attr:" + id, label: ATTRIBUTES[id].name + " \u00B7 " + r.rank.name, color: ATTRIBUTES[id].color });
+    });
     return out;
   }
   function currentTitle(state) {
@@ -1148,6 +1229,164 @@ var Domain = (() => {
   function setFrame(state, idx) {
     if (idx !== null && !(idx >= 0 && idx <= state.rankIndex)) return state;
     return { ...state, player: { ...state.player, frame: idx } };
+  }
+
+
+  // src/domain/extras2.ts
+  var ATTRIBUTE_RANK_LEVELS = [1, 3, 6, 10, 16, 22, 30, 40, 50];
+  function attributeRank(level) {
+    let index = 0;
+    ATTRIBUTE_RANK_LEVELS.forEach((l, i) => {
+      if (level >= l) index = i;
+    });
+    const next = ATTRIBUTE_RANK_LEVELS[index + 1];
+    return { index, rank: RANKS[index], nextLevel: next || null };
+  }
+  function attributeXpForLevel(level) {
+    return ATTR_THRESHOLDS[Math.min(Math.max(level, 1), MAX_ATTRIBUTE_LEVEL)];
+  }
+  function parseDay(key) {
+    const [y, m, d] = key.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
+  function isMissionLocked(state, m, now) {
+    if (!m.requires) return false;
+    const pre = state.missions.find((x) => x.id === m.requires);
+    if (!pre) return false;
+    if (pre.status === "expired" || isMissionExpired(pre, now)) return false;
+    return !isMissionDone(pre, now);
+  }
+  function toggleSubtask(state, missionId, subId, now = /* @__PURE__ */ new Date(), opts = {}) {
+    const m = state.missions.find((x) => x.id === missionId);
+    if (!m || !m.subtasks || !m.subtasks.some((t) => t.id === subId)) return { state, events: [] };
+    if (m.status !== "active" || isMissionDone(m, now) || !isMissionScheduled(m, now) || isMissionLocked(state, m, now)) return { state, events: [] };
+    if (m.deadline && new Date(m.deadline) < now) return { state, events: [] };
+    const key = periodKey(m.type, now);
+    const done = m.progress.periodKey === key ? (m.progress.done || []).filter((id) => m.subtasks.some((t) => t.id === id)) : [];
+    const has = done.includes(subId);
+    const setProgress = (progress) => ({ ...state, missions: state.missions.map((x) => x.id === missionId ? { ...x, progress } : x) });
+    if (has) {
+      const rest = done.filter((x) => x !== subId);
+      return { state: setProgress({ current: rest.length, periodKey: key, done: rest }), events: [] };
+    }
+    return addProgress(setProgress({ current: done.length, periodKey: key, done: [...done, subId] }), missionId, 1, now, opts);
+  }
+  function addGoal(state, input, now = /* @__PURE__ */ new Date()) {
+    const goals = state.goals || [];
+    if (goals.filter((g) => !g.doneAt).length >= 10) return { state, error: "No máximo 10 metas ativas ao mesmo tempo." };
+    if (!ATTRIBUTE_IDS.includes(input.attribute)) return { state, error: "Escolha um atributo." };
+    const target = Math.round(Number(input.targetLevel));
+    const current = attributeProgress(state.attributeXp[input.attribute]).level;
+    if (!(target > current)) return { state, error: "A meta precisa ficar acima do nível atual (Nv. " + current + ")." };
+    if (target > MAX_ATTRIBUTE_LEVEL) return { state, error: "O nível máximo de atributo é " + MAX_ATTRIBUTE_LEVEL + "." };
+    const days = Number(input.days) > 0 ? Math.min(730, Math.round(Number(input.days))) : 0;
+    const goal = {
+      id: newId("g"),
+      attribute: input.attribute,
+      targetLevel: target,
+      startXp: state.attributeXp[input.attribute],
+      startDay: dayKey(now),
+      endDay: days ? dayKey(addDays(now, days)) : null,
+      createdAt: now.toISOString()
+    };
+    return { state: { ...state, goals: [...goals, goal] }, events: [] };
+  }
+  function removeGoal(state, goalId) {
+    return { state: { ...state, goals: (state.goals || []).filter((g) => g.id !== goalId) }, events: [] };
+  }
+  function goalProgress(state, goal, now = /* @__PURE__ */ new Date()) {
+    const xpNow = state.attributeXp[goal.attribute];
+    const need = attributeXpForLevel(goal.targetLevel);
+    const level = attributeProgress(xpNow).level;
+    const span = Math.max(1, need - goal.startXp);
+    const ratio = Math.max(0, Math.min(1, (xpNow - goal.startXp) / span));
+    const today = dayKey(now);
+    const daysLeft = goal.endDay ? dayNumber(goal.endDay) - dayNumber(today) : null;
+    const remainingXp = Math.max(0, need - xpNow);
+    const status = goal.doneAt ? "done" : level >= goal.targetLevel ? "reached" : goal.endDay && today > goal.endDay ? "late" : "active";
+    return {
+      level,
+      ratio,
+      remainingXp,
+      daysLeft,
+      status,
+      perDay: daysLeft !== null && daysLeft > 0 && remainingXp > 0 ? Math.ceil(remainingXp / daysLeft) : null
+    };
+  }
+  function updateGoals(state, now = /* @__PURE__ */ new Date()) {
+    const events = [];
+    const goals = state.goals || [];
+    if (!goals.length) return { state, events };
+    let coins = 0;
+    const next = goals.map((g) => {
+      if (g.doneAt || attributeProgress(state.attributeXp[g.attribute]).level < g.targetLevel) return g;
+      const reward = Math.min(500, g.targetLevel * 10);
+      coins += reward;
+      events.push({ type: "goalDone", attribute: g.attribute, level: g.targetLevel, coins: reward });
+      return { ...g, doneAt: now.toISOString() };
+    });
+    if (!events.length) return { state, events };
+    return { state: { ...state, goals: next, bonusCoins: (state.bonusCoins || 0) + coins }, events };
+  }
+  function weekSummary(state, mondayKey, now = /* @__PURE__ */ new Date()) {
+    var _a;
+    const start = parseDay(mondayKey);
+    const days = Array.from({ length: 7 }, (_, i) => dayKey(addDays(start, i)));
+    const prevStart = addDays(start, -7);
+    const prevDays = Array.from({ length: 7 }, (_, i) => dayKey(addDays(prevStart, i)));
+    const comps = state.completions.filter((c) => days.includes(c.day));
+    const prevXp = state.completions.filter((c) => prevDays.includes(c.day)).reduce((sum, c) => sum + c.xp, 0);
+    const perDay = days.map((d) => ({ day: d, xp: comps.filter((c) => c.day === d).reduce((sum, c) => sum + c.xp, 0) }));
+    const attrXp = emptyAttributeXp();
+    for (const c of comps) {
+      const split = splitXp(c.xp, c.attributes);
+      for (const id of ATTRIBUTE_IDS) attrXp[id] += (_a = split[id]) != null ? _a : 0;
+    }
+    const endIso = addDays(start, 7).toISOString();
+    const startIso = start.toISOString();
+    const inWeek = (h) => h.at >= startIso && h.at < endIso;
+    const boss = state.missions.find((m) => m.type === "boss" && m.progress.periodKey === mondayKey);
+    const moods = (state.journal || []).filter((j) => days.includes(j.day) && j.mood).map((j) => j.mood);
+    const best = perDay.reduce((a, d) => d.xp > a.xp ? d : a, { day: "", xp: 0 });
+    return {
+      weekKey: mondayKey,
+      days,
+      xp: comps.reduce((sum, c) => sum + c.xp, 0),
+      prevXp,
+      perDay,
+      activeDays: new Set(comps.map((c) => c.day)).size,
+      restDays: (state.restDays || []).filter((d) => days.includes(d)).length,
+      missions: comps.length,
+      bestDay: best.xp > 0 ? best : null,
+      attrXp,
+      boss: boss ? { name: boss.name, status: boss.status === "completed" ? "defeated" : "escaped" } : null,
+      levelUps: state.history.filter((h) => h.type === "levelUp" && inWeek(h)).length,
+      achievements: state.history.filter((h) => h.type === "achievement" && inWeek(h)).map((h) => h.achievementId),
+      rankUps: state.history.filter((h) => h.type === "rankUp" && inWeek(h)).map((h) => h.to),
+      mood: moods.length ? moods.reduce((a, b) => a + b, 0) / moods.length : null
+    };
+  }
+  function lastWeekKey(now) {
+    return dayKey(addDays(parseDay(weekKey(now)), -7));
+  }
+  function reviewDue(state, now = /* @__PURE__ */ new Date()) {
+    const thisWeek = weekKey(now);
+    const last = lastWeekKey(now);
+    if ((state.reviews || []).some((r) => r.weekKey === last)) return null;
+    return state.completions.some((c) => c.day >= last && c.day < thisWeek) ? last : null;
+  }
+  function saveReview(state, input, now = /* @__PURE__ */ new Date()) {
+    const key = input.weekKey;
+    const thisWeek = weekKey(now);
+    const oldest = dayKey(addDays(parseDay(thisWeek), -28));
+    if (!(key < thisWeek && key >= oldest)) return { state, error: "Só dá para revisar as últimas 4 semanas concluídas." };
+    const clean = (t) => String(t || "").trim().slice(0, 280);
+    const entry = { weekKey: key, wins: clean(input.wins), blocks: clean(input.blocks), adjust: clean(input.adjust), at: now.toISOString() };
+    if (!entry.wins && !entry.blocks && !entry.adjust) return { state, error: "Escreva ao menos uma linha na revisão." };
+    const existing = (state.reviews || []).some((r) => r.weekKey === key);
+    const reviews = (state.reviews || []).filter((r) => r.weekKey !== key).concat([entry]).sort((a, b) => a.weekKey < b.weekKey ? -1 : 1);
+    const draft = { ...state, reviews, bonusCoins: (state.bonusCoins || 0) + (existing ? 0 : 15) };
+    return settle(state, draft, now, [{ type: "review", coins: existing ? 0 : 15 }]);
   }
 
   // src/domain/selectors.ts
@@ -1167,7 +1406,7 @@ var Domain = (() => {
   var dailyMissions = (state) => state.missions.filter((m) => m.type === "daily");
   function pendingMissions(state, now = /* @__PURE__ */ new Date()) {
     return state.missions.filter(
-      (m) => m.status === "active" && !isMissionDone(m, now) && !isMissionExpired(m, now) && isMissionScheduled(m, now)
+      (m) => m.status === "active" && !isMissionDone(m, now) && !isMissionExpired(m, now) && isMissionScheduled(m, now) && !isMissionLocked(state, m, now)
     );
   }
   function pendingDaily(state, now = /* @__PURE__ */ new Date()) {
