@@ -134,7 +134,7 @@
     rename: function (name) {
       apply(function (g) { return { state: Object.assign({}, g, { player: Object.assign({}, g.player, { name: name.trim() || g.player.name }) }), events: [] }; });
     },
-    reset: function () { game = null; try { localStorage.removeItem(KEY); } catch (e) {} location.hash = '#/'; render(); }
+    reset: function () { game = null; avatarClear(); try { localStorage.removeItem(KEY); } catch (e) {} location.hash = '#/'; render(); }
   };
 
   /* ------------------------------ componentes ------------------------------ */
@@ -160,15 +160,6 @@
       '<polygon points="' + hexPts(c, c - 3) + '" fill="' + color + '22" stroke="' + color + '" stroke-width="2" stroke-linejoin="round"/>' +
       '<polygon points="' + hexPts(c, c * 0.72) + '" fill="none" stroke="' + color + '" stroke-width="1" opacity=".6" stroke-linejoin="round"/></svg>' +
       '<b style="font-size:' + fs + 'px">' + esc(rank.emblem) + '</b></span>';
-  }
-  /** Personagem do rank `i`. O nível controla a intensidade da aura e o número de anéis do círculo mágico no chão. */
-  function figure(i, level, color, w, o) {
-    o = o || {};
-    var rings = 1 + Math.floor(level / 25), p = Math.min(1, 0.25 + i * 0.05 + (level / 100) * 0.4), ringHtml = '';
-    for (var k = 0; k < rings; k++) ringHtml += '<i style="width:' + (100 - k * 16) + '%;height:' + (100 - k * 18) + '%"></i>';
-    return '<div class="fig' + (o.locked ? ' locked' : '') + (o.still ? ' static' : '') + '" style="--c:' + color + ';--w:' + w + 'px;--p:' + p.toFixed(2) + '">' +
-      '<div class="aura"></div><div class="rings">' + ringHtml + '</div>' +
-      '<img src="assets/forms/form-' + i + '.webp" data-n="' + i + '" alt="Personagem ' + esc(D.RANKS[i].name) + '" draggable="false"></div>';
   }
   function chip(label, on, data, color) {
     return '<button type="button" class="chip' + (on ? ' on' : '') + '" ' + (color ? 'style="--c:' + color + '" ' : '') + data + '>' + esc(label) + '</button>';
@@ -236,7 +227,6 @@
   /* ------------------------------ telas ------------------------------ */
   function viewOnboarding() {
     return '<div class="stack onb"><h1 class="logo">AWAKENING</h1><p class="tagline">Cada dia é uma nova missão.</p>' +
-      figure(0, 1, '#8A94A6', 170) +
       panel('Sistema', '<p style="margin:0 0 14px;line-height:1.35">Você foi escolhido para evoluir. Sua vida real agora é o campo de batalha: cada hábito, estudo e treino concede XP e fortalece seus atributos.</p>' +
         '<p class="label">NOME DO JOGADOR</p><input id="onb-name" class="input" maxlength="24" placeholder="Como o sistema deve chamar você?" autocomplete="nickname" />' +
         '<div style="margin-top:16px"><button class="btn" data-act="start">Despertar</button></div>') +
@@ -262,6 +252,75 @@
       bar(p.xp / p.season.goalXp, 'var(--gold)', 8) + '<div class="xp-row"><span>' + Math.min(p.xp, p.season.goalXp) + ' / ' + p.season.goalXp + ' XP</span><span>' + p.activeDays + '/' + D.SEASON_DAYS_GOAL + ' dias · faltam ' + p.daysLeft + '</span></div>' +
       '<a class="small" style="color:var(--glow);display:inline-block;margin-top:8px" href="#/stats">Ver detalhes</a>', { accent: 'var(--gold)' });
   }
+
+  /* ------------------------------ foto do jogador (fica só neste navegador, fora do backup) ------------------------------ */
+  var AVKEY = 'awakening-avatar-v1';
+  function avatarGet() { try { return localStorage.getItem(AVKEY) || ''; } catch (e) { return ''; } }
+  function avatarClear() { try { localStorage.removeItem(AVKEY); } catch (e) {} }
+  /** Recorta no centro (3:4), reduz para 360×480 e guarda como JPEG (~40 KB). */
+  function avatarFromFile(file) {
+    if (!file || !/^image\//.test(file.type)) return showToast('<div class="t1" style="color:var(--danger)">Escolha um arquivo de imagem.</div>');
+    var fr = new FileReader();
+    fr.onerror = function () { showToast('<div class="t1" style="color:var(--danger)">Não foi possível ler a imagem.</div>'); };
+    fr.onload = function () {
+      var img = new Image();
+      img.onerror = function () { showToast('<div class="t1" style="color:var(--danger)">Imagem inválida.</div>'); };
+      img.onload = function () {
+        var W = 360, H = 480, c = document.createElement('canvas'); c.width = W; c.height = H;
+        var k = Math.max(W / img.width, H / img.height), sw = W / k, sh = H / k, sx = (img.width - sw) / 2, sy = Math.max(0, Math.min(img.height - sh, (img.height - sh) * 0.3));
+        var ctx = c.getContext('2d'); ctx.fillStyle = '#0a1d3d'; ctx.fillRect(0, 0, W, H); ctx.drawImage(img, sx, sy, sw, sh, 0, 0, W, H);
+        try { localStorage.setItem(AVKEY, c.toDataURL('image/jpeg', 0.82)); } catch (e) { return showToast('<div class="t1" style="color:var(--danger)">Sem espaço para salvar a foto neste navegador.</div>'); }
+        render(); showToast('<div class="t1">Foto salva</div>');
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  }
+  var ICO = {
+    cam: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
+    x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+    flame: '<svg viewBox="0 0 24 24" fill="none" stroke="#ffd166" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c1 4 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 1-9z"/></svg>',
+    bolt: '<svg viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg>',
+    dumbbell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 9v6M6 7v10M18 7v10M21 9v6M6 12h12"/></svg>'
+  };
+  /** Foto do jogador no Perfil: a mesma foto escolhida no Painel (nada de personagem ilustrado). */
+  function profilePhoto(color) {
+    var av = avatarGet(), ri = game.rankIndex;
+    var inner = av
+      ? '<img src="' + av + '" alt="Sua foto de jogador" draggable="false">'
+      : '<button type="button" class="sp-add" data-act="av-pick" aria-label="Adicionar foto">' + ICO.cam + '<span>Adicionar foto</span></button>';
+    return '<div class="sp pf-photo" style="--c:' + color + '"><div class="sp-r">' + (ri >= 5 ? '<div class="sp-f2"></div>' : '') +
+      '<div class="sp-fr' + (ri >= 3 ? ' hi' : '') + '"><div class="sp-in">' + inner + '</div></div>' +
+      '<button type="button" class="sp-ib sp-cam" data-act="av-pick" aria-label="' + (av ? 'Trocar foto' : 'Adicionar foto') + '" title="' + (av ? 'Trocar foto' : 'Adicionar foto') + '">' + ICO.cam + '</button>' +
+      (av ? '<button type="button" class="sp-ib sp-del" data-act="av-del" aria-label="Remover foto" title="Remover foto">' + ICO.x + '</button>' : '') +
+      '</div><input type="file" id="av-file" accept="image/*" hidden></div>';
+  }
+  /** Painel "Status": emblema animado do rank (esquerda), foto do jogador (direita), cartões rápidos e barra de XP. */
+  function statusPanel(rank, lvl, frameColor) {
+    var c = rank.color, ri = game.rankIndex, av = avatarGet(), stats = D.deriveStats(game, now), nv = Number(lvl.level);
+    var top = D.ATTRIBUTE_IDS.reduce(function (b, id) { return (!b || stats.attributeLevels[id] > stats.attributeLevels[b]) ? id : b; }, null), td = D.ATTRIBUTES[top];
+    var streak = stats.currentStreak, today = D.xpToday(game, now);
+    var photo = av
+      ? '<img src="' + av + '" alt="Sua foto de jogador" draggable="false">'
+      : '<button type="button" class="sp-add" data-act="av-pick" aria-label="Adicionar foto">' + ICO.cam + '<span>Adicionar foto</span></button>';
+    var body = '<div class="sp" style="--c:' + c + '"><div class="sp-grid">' +
+      '<div class="sp-l">' + (window.RankFx ? RankFx.badge(ri, c, rank.emblem, rank.name + ' · ' + rank.title) : rankBadge(rank, 96)) +
+        '<div class="sp-k">RANK ATUAL</div><div class="sp-n">' + esc(rank.name.toUpperCase()) + '</div><div class="sp-t">' + esc(rank.title) + '</div></div>' +
+      '<div class="sp-r">' + (ri >= 5 ? '<div class="sp-f2"></div>' : '') +
+        '<div class="sp-fr' + (ri >= 3 ? ' hi' : '') + '"><div class="sp-in">' + photo + '</div></div>' +
+        '<button type="button" class="sp-ib sp-cam" data-act="av-pick" aria-label="' + (av ? 'Trocar foto' : 'Adicionar foto') + '" title="' + (av ? 'Trocar foto' : 'Adicionar foto') + '">' + ICO.cam + '</button>' +
+        (av ? '<button type="button" class="sp-ib sp-del" data-act="av-del" aria-label="Remover foto" title="Remover foto">' + ICO.x + '</button>' : '') +
+        '<div class="sp-nv">NV ' + nv + '</div></div></div>' +
+      '<div class="sp-stats">' +
+        '<div class="sp-st"><small>' + ICO.flame + 'SEQUÊNCIA</small><b>' + streak + ' ' + (streak === 1 ? 'dia' : 'dias') + '</b></div>' +
+        '<div class="sp-st"><small>' + ICO.bolt + 'HOJE</small><b style="color:var(--success)">+' + today + ' XP</b></div>' +
+        '<div class="sp-st"><small><span style="color:' + td.color + ';display:flex">' + ICO.dumbbell + '</span>TOP</small><b><em>' + esc(td.name) + '</em><span>' + stats.attributeLevels[top] + '</span></b></div>' +
+      '</div>' +
+      '<div class="sp-xp"><div class="sp-bar"><i style="width:' + (lvl.ratio * 100).toFixed(1) + '%"></i></div><div class="xp-row"><span>' +
+        (lvl.isMax ? 'NÍVEL MÁXIMO' : lvl.xpIntoLevel + ' / ' + lvl.xpForNext + ' XP') + '</span><span style="color:var(--success)">' + (lvl.isMax ? 'o trono é seu' : 'faltam ' + (lvl.xpForNext - lvl.xpIntoLevel) + ' para o Nv. ' + (nv + 1)) + '</span></div></div></div>' +
+      '<input type="file" id="av-file" accept="image/*" hidden>';
+    return panel('Status', body, { accent: frameColor });
+  }
   function viewDashboard() {
     var rank = D.RANKS[game.rankIndex], lvl = D.levelProgress(game.totalXp), pending = D.pendingDaily(game, now);
     var frameIdx = game.player.frame != null ? game.player.frame : game.rankIndex, frameColor = D.RANKS[frameIdx].color;
@@ -276,18 +335,11 @@
     var entry = (game.journal || []).filter(function (j) { return j.day === today; })[0];
     var jt = journalDraft != null ? journalDraft : (entry ? entry.text : ''), jm = journalMood != null ? journalMood : (entry && entry.mood) || 0;
     var html = '<div class="hdr"><div style="min-width:0"><div class="greet">' + greeting(now.getHours()) + ',</div><h1 class="name">' + esc(game.player.name) + '.</h1>' +
-      (title ? '<div class="ttl" style="color:' + title.color + '">' + esc(title.label) + '</div>' : '') + '</div>' +
+      (title ? '<div class="ttl" style="color:' + title.color + '">' + esc(title.label) + '</div>' : '<div class="ttl" style="color:' + rank.color + '">' + esc(rank.name) + ' · ' + esc(rank.title) + '</div>') + '</div>' +
       '<div class="hdr-r"><a class="coins" href="#/store" title="Suas moedas — abrir a loja">◆ ' + D.coinBalance(game) + '</a><a class="gear" href="#/settings" aria-label="Ajustes e backup" title="Ajustes e backup">⚙</a></div></div>';
     html += banners();
 
-    html += panel('Status',
-      '<div class="hero">' + figure(game.rankIndex, lvl.level, rank.color, 300) +
-      '<div class="side left" style="color:' + rank.color + '">' + rankBadge(rank, 52) + '<div class="lab">' + esc(rank.title) + '</div></div>' +
-      '<div class="side right"><div class="lv-l">NÍVEL</div><div class="lv-n" style="color:' + rank.color + '">' + lvl.level + '</div><div class="mute small">/ 100</div></div></div>' +
-      '<p class="rank-name" style="color:' + rank.color + '">' + esc(rank.name) + '</p><p class="rank-sub">' + esc(rank.description) + '</p>' +
-      '<div style="margin-top:16px">' + bar(lvl.ratio, 'var(--glow)', 10) + '<div class="xp-row"><span>' +
-      (lvl.isMax ? 'NÍVEL MÁXIMO' : lvl.xpIntoLevel + ' / ' + lvl.xpForNext + ' XP') + '</span><span style="color:var(--success)">Hoje +' + D.xpToday(game, now) + ' XP</span></div></div>',
-      { accent: frameColor });
+    html += statusPanel(rank, lvl, frameColor);
 
     bosses.forEach(function (b) { html += bossCard(b); });
     html += (window.AW && AW.reviewBanner ? AW.reviewBanner() : '') + seasonMini() + (window.AW && AW.goalsMini ? AW.goalsMini() : '');
@@ -362,7 +414,7 @@
     var rank = D.RANKS[game.rankIndex], lvl = D.levelProgress(game.totalXp), stats = D.deriveStats(game, now), up = D.nextRank(game, now);
     var frameColor = D.RANKS[game.player.frame != null ? game.player.frame : game.rankIndex].color, curTitle = D.currentTitle(game);
     var html = panel('Personagem',
-      '<div style="display:flex;flex-direction:column;align-items:center;gap:4px">' + figure(game.rankIndex, lvl.level, rank.color, 290) +
+      '<div style="display:flex;flex-direction:column;align-items:center;gap:4px">' + profilePhoto(frameColor) +
       '<input id="char-name" class="name-input" maxlength="24" value="' + esc(game.player.name) + '" aria-label="Nome do personagem" />' +
       '<div style="font-family:var(--display);font-size:12px;letter-spacing:1.5px;color:' + rank.color + '">' + esc(rank.name) + ' · ' + esc(rank.title) + '</div>' +
       (curTitle ? '<div style="font-weight:700;letter-spacing:1px;color:' + curTitle.color + '">' + esc(curTitle.label) + '</div>' : '') +
@@ -375,8 +427,8 @@
     html += window.AW && AW.goalsPanel ? AW.goalsPanel() : '';
     var forms = D.RANKS.map(function (r, i) {
       var reached = i <= game.rankIndex, current = i === game.rankIndex;
-      return '<div class="form' + (current ? ' cur' : '') + '" style="--c:' + r.color + '">' + figure(i, current ? lvl.level : r.requirements.minLevel, r.color, 88, { locked: !reached, still: true }) +
-        rankBadge(r, 34, !reached) + '<div class="id" style="color:' + (reached ? r.color : 'var(--mute)') + '">' + r.id + '</div><div class="lv">' +
+      return '<div class="form' + (current ? ' cur' : '') + '" style="--c:' + r.color + '">' +
+        rankBadge(r, 56, !reached) + '<div class="id" style="color:' + (reached ? r.color : 'var(--mute)') + '">' + r.id + '</div><div class="lv">' +
         (reached ? (current ? 'ATUAL' : 'Nv. ' + r.requirements.minLevel) : '🔒 Nv. ' + r.requirements.minLevel) + '</div></div>';
     }).join('');
     var next = '<p class="dim" style="color:var(--gold)">Você alcançou o ápice. O trono é seu.</p>';
@@ -543,27 +595,49 @@
   function showModal(events, levelUp, rankUp) {
     var gained = events.reduce(function (s, e) { return s + (e.type === 'xp' || e.type === 'boss' ? e.amount : e.type === 'workout' ? e.xp : e.type === 'achievement' ? e.rewardXp : 0); }, 0);
     var achs = events.filter(function (e) { return e.type === 'achievement'; });
-    var idx = game.rankIndex, color = D.RANKS[idx].color, level = D.levelProgress(game.totalXp).level;
-    var prev = rankUp ? D.RANKS.findIndex(function (r) { return r.id === rankUp.from; }) : idx;
+    var idx = game.rankIndex, rk = D.RANKS[idx], color = rk.color, level = D.levelProgress(game.totalXp).level;
+    var c2 = mix(hexRgb(color), 0.55), c2s = 'rgb(' + c2.join(',') + ')';
     var msg = MESSAGES[((levelUp ? levelUp.to : 0) + (rankUp ? 1 : 0)) % MESSAGES.length];
-    var html = '<div class="overlay" role="dialog" aria-modal="true"><div class="modal" style="--c:' + color + '"><div class="sys">[ NOTIFICAÇÃO DO SISTEMA ]</div><h2>' +
-      (rankUp ? 'NOVO RANK DESBLOQUEADO' : 'NÍVEL AUMENTADO') + '</h2>' +
-      (levelUp ? '<div class="lvls"><span class="o">Nv. ' + levelUp.from + '</span><span style="color:' + color + '">▶</span><span class="n">Nv. ' + levelUp.to + '</span></div>' : '') +
-      '<div class="pair">' + (rankUp ? figure(prev, D.RANKS[prev].requirements.minLevel, D.RANKS[prev].color, 84, { locked: true, still: true }) + '<span class="arrow">▶</span>' : '') +
-      figure(idx, level, color, rankUp ? 170 : 170) + '</div>' +
-      (rankUp ? '<div style="font-family:var(--display);color:' + color + ';letter-spacing:2px">' + esc(D.rankById(rankUp.to).name) + ' · ' + esc(D.rankById(rankUp.to).title) + '</div>' : '') +
-      '<div class="gain">+' + gained + ' XP conquistados</div>' +
-      achs.map(function (a) { return '<div class="ach-l">✦ Conquista: ' + esc(a.name) + ' (+' + a.rewardXp + ' XP)</div>'; }).join('') +
-      events.filter(function (e) { return e.type === 'goalDone'; }).map(function (e) { return '<div class="ach-l">🎯 Meta cumprida: ' + esc(D.ATTRIBUTES[e.attribute].name) + ' Nv. ' + e.level + ' (+' + e.coins + ' moedas)</div>'; }).join('') +
-      '<p class="msg">“' + esc(msg) + '”</p><button class="btn" style="margin-top:8px" data-act="close-modal">Continuar</button></div></div>';
+    var from = levelUp ? levelUp.from : level, to = levelUp ? levelUp.to : level;
+    var big = String(to).length > 2 ? 40 : 52;
+    var hex = '<div class="lu-hex"><div class="lu-rays"></div><div class="lu-glow"></div><div class="lu-orbs"><i></i><i></i><i></i></div><div class="lu-sweep"></div>' +
+      '<svg viewBox="0 0 200 200" aria-hidden="true"><defs><linearGradient id="lu-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="' + c2s + '"/><stop offset=".5" stop-color="' + color + '"/><stop offset="1" stop-color="#ffd166"/></linearGradient></defs>' +
+        '<polygon class="lu-h3" points="' + hexPts(100, 96) + '" fill="none" stroke="' + color + '" stroke-width="2" opacity=".35"/>' +
+        '<polygon class="lu-h2" points="' + hexPts(100, 84) + '" fill="' + color + '33" stroke="url(#lu-g)" stroke-width="6" stroke-linejoin="round"/>' +
+        '<polygon points="' + hexPts(100, 66) + '" fill="none" stroke="' + color + '" stroke-width="1.5" opacity=".6" stroke-linejoin="round"/></svg>' +
+      '<div class="lu-num" style="--c2:' + c2s + '"><small>NÍVEL</small><b id="lu-n" style="font-size:' + big + 'px">' + from + '</b></div><div class="lu-burst"></div></div>';
+    var html = '<div class="overlay lu-ov" role="dialog" aria-modal="true"><div class="modal lu" style="--c:' + color + '">' +
+      '<i class="lu-c1"></i><i class="lu-c2"></i><div class="lu-shine"></div>' +
+      '<div class="sys">[ NOTIFICAÇÃO DO SISTEMA ]</div>' +
+      '<h2 class="lu-title">' + (rankUp ? 'NOVO RANK DESBLOQUEADO' : 'NÍVEL AUMENTADO') + '</h2>' + hex +
+      (levelUp ? '<div class="lu-from"><span>Nv. ' + from + '</span><em style="color:' + color + '">▶</em><span class="t">Nv. ' + to + '</span></div>' : '') +
+      (rankUp ? '<div class="lu-rank">' + (window.RankFx ? RankFx.badge(idx, color, rk.emblem, rk.name + ' · ' + rk.title) : rankBadge(rk, 96)) +
+        '<div class="rn">' + esc(rk.name.toUpperCase()) + '</div><div class="rt">' + esc(rk.title) + '</div></div>' : '') +
+      '<div class="lu-gain" style="--c2:' + c2s + '"><span>+' + gained + '</span> XP conquistados</div>' +
+      achs.map(function (a) { return '<div class="ach-l lu-ach">✦ Conquista: ' + esc(a.name) + ' <b>+' + a.rewardXp + ' XP</b></div>'; }).join('') +
+      events.filter(function (e) { return e.type === 'goalDone'; }).map(function (e) { return '<div class="ach-l lu-ach">🎯 Meta cumprida: ' + esc(D.ATTRIBUTES[e.attribute].name) + ' Nv. ' + e.level + ' <b>+' + e.coins + ' moedas</b></div>'; }).join('') +
+      '<p class="msg">“' + esc(msg) + '”</p><button class="btn" style="margin-top:6px" data-act="close-modal">Continuar</button></div></div>';
     $modal.innerHTML = html;
-    var ov = $modal.firstChild, fx = '<div class="ring" style="--c:' + color + '"></div>';
-    for (var i = 0; i < 14; i++) {
-      var a = i / 14 * Math.PI * 2;
-      fx += '<div class="spark" style="--c:' + color + ';--dx:' + Math.round(Math.cos(a) * 160) + 'px;--dy:' + Math.round(Math.sin(a) * 160) + 'px"></div>';
+    var ov = $modal.firstChild, fx = '<div class="lu-flash"></div><div class="ring" style="--c:' + color + '"></div><div class="ring r2" style="--c:' + color + '"></div>';
+    for (var i = 0; i < 30; i++) {
+      var a = i / 30 * Math.PI * 2 + (i % 2) * 0.1, d = 140 + (i % 3) * 55, sz = 3 + (i % 4);
+      fx += '<div class="spark" style="--c:' + (i % 5 === 0 ? '#ffd166' : color) + ';--dx:' + Math.round(Math.cos(a) * d) + 'px;--dy:' + Math.round(Math.sin(a) * d) + 'px;width:' + sz + 'px;height:' + sz + 'px;animation-delay:' + (i % 3) * 0.08 + 's"></div>';
     }
+    for (var q = 0; q < 16; q++) fx += '<div class="lu-rise" style="left:' + (8 + (q * 37) % 84) + '%;--d:' + (2.6 + (q % 5) * 0.6).toFixed(1) + 's;animation-delay:' + ((q % 7) * 0.35).toFixed(2) + 's;width:' + (2 + q % 3) + 'px;height:' + (2 + q % 3) + 'px"></div>';
     ov.insertAdjacentHTML('beforeend', fx);
     vibrate([60, 40, 90]);
+    /* contagem do nível: de "from" até "to" */
+    var nEl = document.getElementById('lu-n');
+    if (nEl && to > from && !(document.documentElement.getAttribute('data-motion') === 'reduced' || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches))) {
+      var steps = to - from, t0 = null, dur = Math.min(900, 380 + steps * 120);
+      setTimeout(function () {
+        (function tick(ts) {
+          if (!document.body.contains(nEl)) return;
+          t0 = t0 || ts; var k = Math.min(1, (ts - t0) / dur); var nv = from + Math.round(steps * k); if (nv !== Number(nEl.textContent)) { nEl.textContent = nv; nEl.classList.remove('bump'); void nEl.offsetWidth; nEl.classList.add('bump'); }
+          if (k < 1) requestAnimationFrame(tick); else { nEl.classList.add('done'); var bu = document.querySelector('.lu-burst'); if (bu) bu.classList.add('go'); vibrate(25); }
+        })(performance.now());
+      }, 650);
+    } else if (nEl) { nEl.textContent = to; }
     var btn = $modal.querySelector('[data-act=close-modal]'); if (btn) btn.focus();
   }
   function closeModal() { $modal.innerHTML = ''; }
@@ -616,15 +690,6 @@
     renderHooks.forEach(function (fn) { try { fn(r); } catch (e) { console.error(e); } });
   }
 
-  /* Plano B para imagens: se não achar em assets/forms/, tenta forms/ e depois a raiz (upload sem a estrutura de pastas). */
-  document.addEventListener('error', function (ev) {
-    var img = ev.target;
-    if (!img || img.tagName !== 'IMG' || img.dataset.n === undefined) return;
-    var tries = [('forms/form-' + img.dataset.n + '.webp'), ('form-' + img.dataset.n + '.webp')];
-    var k = Number(img.dataset.try || 0);
-    if (k < tries.length) { img.dataset.try = k + 1; img.src = tries[k]; }
-  }, true);
-
   /* ------------------------------ eventos de interface ------------------------------ */
   document.addEventListener('click', function (ev) {
     var el = ev.target.closest('[data-act]'); if (!el || el.disabled || el.hasAttribute('disabled')) return;
@@ -643,6 +708,8 @@
       case 'tab': tab = id; return render();
       case 'rename': return act.rename(document.getElementById('char-name').value);
       case 'reset': if (confirm('Todo o progresso será apagado deste navegador. Esta ação não pode ser desfeita. Faça um backup antes, se quiser guardar.')) act.reset(); return;
+      case 'av-pick': var af = document.getElementById('av-file'); if (af) af.click(); return;
+      case 'av-del': if (confirm('Remover a sua foto do painel?')) { avatarClear(); render(); } return;
       case 'close-modal': return closeModal();
       case 'f-tpl': applyTemplate(Number(id)); return render();
       case 'f-type': form.type = id; suggest(); return render();
@@ -661,6 +728,7 @@
       default: if (handlers[a]) return handlers[a](el, ev);
     }
   });
+  document.addEventListener('change', function (ev) { var t = ev.target; if (t && t.id === 'av-file' && t.files && t.files[0]) { avatarFromFile(t.files[0]); t.value = ''; } });
   document.addEventListener('input', function (ev) {
     var t = ev.target;
     if (t.id === 'char-name') { var box = document.getElementById('save-name'); box.classList.toggle('hidden', !t.value.trim() || t.value.trim() === game.player.name); return; }
@@ -695,7 +763,7 @@
     getGame: function () { return game; }, getNow: function () { return now; }, setGame: setGame, isStorageOk: function () { return storageOk; },
     apply: apply, act: act, render: render, route: route, save: save, load: load, saveSettings: saveSettings, takeSnapshot: takeSnapshot, applyTheme: applyTheme,
     showToast: showToast, openModal: openModal, closeModal: closeModal, handleEvents: handleEvents,
-    esc: esc, panel: panel, bar: bar, chip: chip, figure: figure, rankBadge: rankBadge, missionCard: missionCard, attrRow: attrRow,
+    esc: esc, panel: panel, bar: bar, chip: chip, rankBadge: rankBadge, missionCard: missionCard, attrRow: attrRow,
     pad: pad, dm: dm, DIFF_COLOR: DIFF_COLOR, TYPE_LABEL: TYPE_LABEL, DAYS3: DAYS3, MOODS: MOODS, lastError: function () { return lastError; }
   };
 

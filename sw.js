@@ -1,7 +1,6 @@
 /* Awakening — service worker: funciona offline e atualiza sozinho quando há internet. */
-var CACHE = 'awakening-v9';
-var SHELL = ['./', 'index.html', 'styles.css', 'domain.js', 'app.js', 'features.js', 'treinos.js', 'workout.js', 'manifest.webmanifest', 'assets/favicon.png', 'assets/icon-192.png', 'assets/icon-512.png',
-  'assets/forms/form-0.webp', 'assets/forms/form-1.webp', 'assets/forms/form-2.webp', 'assets/forms/form-3.webp', 'assets/forms/form-4.webp', 'assets/forms/form-5.webp', 'assets/forms/form-6.webp', 'assets/forms/form-7.webp', 'assets/forms/form-8.webp'];
+var CACHE = 'awakening-v14';
+var SHELL = ['./', 'index.html', 'styles.css', 'domain.js', 'rankfx.js', 'app.js', 'features.js', 'treinos.js', 'workout.js', 'manifest.webmanifest', 'assets/favicon.png', 'assets/icon-192.png', 'assets/icon-512.png'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return Promise.all(SHELL.map(function (u) { return c.add(u).catch(function () {}); })); }).then(function () { return self.skipWaiting(); }));

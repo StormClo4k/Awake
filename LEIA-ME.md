@@ -1,6 +1,25 @@
-# Awakening — versão HTML/JS (v0.6)
+# Awakening — versão HTML/JS (v0.7.3)
+
+## v0.7.3: efeitos extras no nível
+- Brilho que varre o hexágono, 3 pontos de luz orbitando, partículas subindo pela tela, número que "pulsa" a cada contagem e estouro com onda de choque ao chegar no novo nível. Cache `awakening-v14`.
+
+## v0.7.2: aviso de subida de nível redesenhado
+- Hexágono grande com o nível (contagem animada do número antigo ao novo), raios de luz girando, brilho na cor do rank, clarão na tela, 30 faíscas e dois anéis de onda. Em subida de rank, o emblema animado do novo rank aparece abaixo. Respeita animações reduzidas. Cache `awakening-v12`.
+
+## v0.7.1: sem ilustrações de personagem
+- Os personagens ilustrados por rank **não são mais usados**. A aba **Perfil** mostra a mesma foto que a pessoa coloca no Painel (com botão para trocar ou remover) e, ao subir de nível ou de rank, o aviso mostra só texto e efeitos, sem foto nem personagem.
+- Na Hierarquia, cada rank aparece apenas pelo emblema. O cartão do personagem para compartilhar usa a foto do jogador (se houver).
+- A pasta `assets/forms/` foi removida. Cache do PWA: `awakening-v11`.
+
 
 Sem build, sem dependências: abra `index.html` no navegador ou publique a pasta inteira em qualquer hospedagem estática.
+
+## Novidades da v0.7: painel Status com foto e emblema animado por rank
+- **Foto do jogador**: no Painel, toque em "Adicionar foto" (ou no botão de câmera) e escolha uma imagem. Ela é recortada em 3:4, reduzida (~40 KB) e guardada **só neste navegador, fora do backup**. O botão ✕ remove a foto; "Apagar progresso" também apaga a foto.
+- **Painel Status redesenhado**: emblema do rank e título à esquerda, foto à direita com a etiqueta de nível, três cartões rápidos (sequência, XP de hoje, atributo mais forte) e barra de XP.
+- **Cada rank com cor e efeito próprios** (novo arquivo `rankfx.js`): E Brasa · D Broto · C Aço · B Órbita · A Chama · S Raio · SS Aurora · SSS Holograma · MONARCA Coroa de luz. A moldura da foto ganha mais presença nos ranks altos (contorno duplo a partir do S).
+- Respeita **animações reduzidas** (Ajustes ou preferência do sistema) e os modos claro e escuro.
+- Cache do PWA atualizado para `awakening-v10` (inclui `rankfx.js`).
 
 ## GitHub Pages
 1. Envie **todo o conteúdo desta pasta** para a raiz de um repositório (inclusive `manifest.webmanifest`, `sw.js` e a pasta `assets`).
@@ -86,4 +105,4 @@ Sem build, sem dependências: abra `index.html` no navegador ou publique a pasta
 
 ## Arquivos
 - `domain.js` — motor do jogo. `app.js` — telas principais. `features.js` — recursos extras.
-- `styles.css`, `sw.js`, `manifest.webmanifest`, `assets/` (ilustrações em `assets/forms/`, ícones do app).
+- `styles.css`, `sw.js`, `manifest.webmanifest`, `assets/` (ícones do app).

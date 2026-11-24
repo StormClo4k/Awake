@@ -622,25 +622,30 @@
 
   /* ------------------------------ cartão do personagem ------------------------------ */
   var lastCard = null;
-  function loadImg(i) {
+  /** Foto do jogador (a mesma do Painel), guardada só neste navegador. */
+  function loadImg() {
     return new Promise(function (resolve) {
-      var tries = ['assets/forms/form-' + i + '.webp', 'forms/form-' + i + '.webp', 'form-' + i + '.webp'], k = 0, img = new Image();
-      img.onload = function () { resolve(img); };
-      img.onerror = function () { k++; if (k < tries.length) img.src = tries[k]; else resolve(null); };
-      img.src = tries[0];
+      var u = ''; try { u = localStorage.getItem('awakening-avatar-v1') || ''; } catch (e) {}
+      if (!u) return resolve(null);
+      var img = new Image(); img.onload = function () { resolve(img); }; img.onerror = function () { resolve(null); }; img.src = u;
     });
   }
   function buildCard() {
     var g = G(), now = N(), st = D.deriveStats(g, now), rank = D.RANKS[g.rankIndex], lvl = D.levelProgress(g.totalXp).level, title = D.currentTitle(g);
     var fc = D.RANKS[g.player.frame != null ? g.player.frame : g.rankIndex].color;
     var fontsReady = document.fonts && document.fonts.load ? Promise.all([document.fonts.load('900 64px Orbitron'), document.fonts.load('700 30px Rajdhani')]).catch(function () {}) : Promise.resolve();
-    return Promise.all([loadImg(g.rankIndex), fontsReady]).then(function (r) {
+    return Promise.all([loadImg(), fontsReady]).then(function (r) {
       var img = r[0], W = 1080, H = 1350, c = document.createElement('canvas'); c.width = W; c.height = H;
       var x = c.getContext('2d'), center = function (t, y) { x.textAlign = 'center'; x.fillText(t, W / 2, y); };
       var bg = x.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#0a1d3d'); bg.addColorStop(0.45, '#07101f'); bg.addColorStop(1, '#03050b'); x.fillStyle = bg; x.fillRect(0, 0, W, H);
       x.strokeStyle = 'rgba(61,169,255,.07)'; x.lineWidth = 1; for (var i = 0; i <= W; i += 54) { x.beginPath(); x.moveTo(i, 0); x.lineTo(i, H); x.stroke(); } for (var j = 0; j <= H; j += 54) { x.beginPath(); x.moveTo(0, j); x.lineTo(W, j); x.stroke(); }
       var glow = x.createRadialGradient(W / 2, 560, 40, W / 2, 560, 560); glow.addColorStop(0, rank.color + '66'); glow.addColorStop(1, rank.color + '00'); x.fillStyle = glow; x.fillRect(0, 0, W, H);
-      if (img) { var w = 900, h = w * img.naturalHeight / img.naturalWidth; x.drawImage(img, (W - w) / 2, 150, w, h); }
+      if (img) {
+        var pw = 690, ph = 800, px = (W - pw) / 2, py = 150, k = Math.max(pw / img.naturalWidth, ph / img.naturalHeight), sw = pw / k, sh = ph / k;
+        x.save(); x.beginPath(); if (x.roundRect) x.roundRect(px, py, pw, ph, 56); else x.rect(px, py, pw, ph); x.clip();
+        x.drawImage(img, (img.naturalWidth - sw) / 2, Math.max(0, (img.naturalHeight - sh) * 0.3), sw, sh, px, py, pw, ph); x.restore();
+        x.strokeStyle = fc; x.lineWidth = 6; x.beginPath(); if (x.roundRect) x.roundRect(px, py, pw, ph, 56); else x.rect(px, py, pw, ph); x.stroke();
+      }
       x.strokeStyle = fc; x.lineWidth = 4; x.beginPath(); x.moveTo(60, 24); x.lineTo(W - 24, 24); x.lineTo(W - 24, H - 60); x.lineTo(W - 60, H - 24); x.lineTo(24, H - 24); x.lineTo(24, 60); x.closePath(); x.stroke();
       x.fillStyle = '#00d4ff'; x.font = '900 40px Orbitron, sans-serif'; try { x.letterSpacing = '14px'; } catch (e) {} center('AWAKENING', 100); try { x.letterSpacing = '0px'; } catch (e) {}
       x.fillStyle = '#e8f0ff'; x.font = '900 76px Orbitron, sans-serif'; center(g.player.name.toUpperCase(), 1010);
