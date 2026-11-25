@@ -1,5 +1,5 @@
 /* Awakening — service worker: funciona offline e atualiza sozinho quando há internet. */
-var CACHE = 'awakening-v14';
+var CACHE = 'awakening-v15';
 var SHELL = ['./', 'index.html', 'styles.css', 'domain.js', 'rankfx.js', 'app.js', 'features.js', 'treinos.js', 'workout.js', 'manifest.webmanifest', 'assets/favicon.png', 'assets/icon-192.png', 'assets/icon-512.png'];
 
 self.addEventListener('install', function (e) {

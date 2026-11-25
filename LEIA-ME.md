@@ -1,4 +1,7 @@
-# Awakening — versão HTML/JS (v0.7.3)
+# Awakening — versão HTML/JS (v0.7.4)
+
+## v0.7.4: sugestão de treino com rotação
+- A sugestão do Início agora segue o **último treino registrado** (não a contagem da semana), pula grupos ainda em recuperação (~48 h) e explica o motivo. Se você já treinou hoje, o card mostra "Treino de hoje cumprido ✓" e sugere o próximo (com o Plano semanal, o próximo dia do plano). Cardio alterna entre as opções. Cache `awakening-v15`.
 
 ## v0.7.3: efeitos extras no nível
 - Brilho que varre o hexágono, 3 pontos de luz orbitando, partículas subindo pela tela, número que "pulsa" a cada contagem e estouro com onda de choque ao chegar no novo nível. Cache `awakening-v14`.

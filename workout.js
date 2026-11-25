@@ -76,10 +76,54 @@
     if (p.goal === 'condicionamento' && d >= 3) list[1] = 'cardio';
     return list;
   }
-  function suggestion(p) {
-    var plan = planFor(p), done = logsIn(D.weekKey(new Date())).length;
-    var g = plan[done % plan.length];
-    return g === 'cardio' ? T.cardio(T.cardioList(p.place)[(done + 1) % T.cardioList(p.place).length].id, p.level) : T.build(g, p.place, p.level, p.goal === 'forca' ? 'forca' : p.goal === 'emagrecer' ? 'resist' : 'hiper');
+  /** Pronto para treinar o grupo? Precisa de ~48 h (extra=1 quando a sugestão é para amanhã). Cardio e mobilidade sempre liberados. */
+  function groupReady(g, extra) {
+    if (g === 'cardio' || g === 'mobilidade') return true;
+    var d = daysSince(g); return d === null || d + (extra || 0) >= 2;
+  }
+  function groupName(g) { var d = T.GROUPS.filter(function (x) { return x.id === g; })[0]; return d ? d.name : g; }
+  function buildGroup(g, p) {
+    if (g === 'cardio') {
+      var l = T.cardioList(p.place), n = W.logs.filter(function (x) { return x.group === 'cardio' || x.kind === 'cardio'; }).length;
+      return T.cardio(l[n % l.length].id, p.level);
+    }
+    return T.build(g, p.place, p.level, p.goal === 'forca' ? 'forca' : p.goal === 'emagrecer' ? 'resist' : 'hiper');
+  }
+  /** Sugestão com rotação: segue o ÚLTIMO treino feito (não a contagem da semana) e pula grupos ainda em recuperação. */
+  function suggestionInfo(p) {
+    var plan = planFor(p), tdy = today(), doneToday = W.logs.some(function (l) { return l.day === tdy; }), last = null, i;
+    for (i = W.logs.length - 1; i >= 0; i--) { if (plan.indexOf(W.logs[i].group) >= 0) { last = W.logs[i]; break; } }
+    var start = last ? (plan.indexOf(last.group) + 1) % plan.length : 0, pick = null, skipped = [], extra = doneToday ? 1 : 0;
+    for (i = 0; i < plan.length; i++) {
+      var g = plan[(start + i) % plan.length];
+      if (groupReady(g, extra)) { pick = g; break; }
+      if (skipped.indexOf(groupName(g)) < 0) skipped.push(groupName(g));
+    }
+    var forced = !pick; if (forced) { pick = plan[start]; skipped = []; }
+    return { w: buildGroup(pick, p), doneToday: doneToday, skipped: skipped, lastName: last ? last.name : '', forced: forced };
+  }
+  function suggestion(p) { return suggestionInfo(p).w; }
+  var DAYN = ['segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo'];
+  function reasonNote(inf) {
+    var t = [];
+    if (inf.lastName) t.push('Depois do seu último treino (' + esc(inf.lastName) + ').');
+    if (inf.skipped.length) t.push('Pulei ' + esc(inf.skipped.join(', ')) + ': ainda em recuperação.');
+    if (inf.forced) t.push('Você treinou todos os grupos há pouco. Vá leve ou descanse.');
+    return t.length ? '<p class="help" style="margin:0 0 10px">' + t.join(' ') + '</p>' : '';
+  }
+  /** Decide o que o card do Início mostra: treino de hoje, "já cumprido + próximo", ou descanso. */
+  function homeCard(p, pk, inf) {
+    var tdy = today(), doneBanner = function (msg) { return panel('Treino de hoje cumprido ✓', '<p style="margin:0">' + msg + '</p>', { accent: 'var(--success)' }); };
+    if (pk.rest) return { w: inf.w, title: 'Se quiser treinar hoje', note: reasonNote(inf), banner: panel('Hoje é dia de descanso', '<p style="margin:0">Seu plano marca descanso hoje. Dormir bem e se alimentar direito também é parte do treino.</p>', { accent: 'var(--success)' }) };
+    if (pk.fromPlan && pk.w) {
+      var done = W.logs.some(function (l) { return l.day === tdy && (l.key === pk.w.key || l.group === pk.w.group); });
+      if (!done) return { w: pk.w, title: 'Treino de hoje (seu plano)', note: '', banner: '' };
+      var ti = todayIdx(), nxt = null, nd = '';
+      for (var k = 1; k <= 7 && !nxt; k++) { var key = W.plan.days[(ti + k) % 7]; if (key) { nxt = find(key); nd = k === 1 ? 'amanhã' : DAYN[(ti + k) % 7]; } }
+      return { w: nxt || inf.w, title: nxt ? 'Próximo do plano · ' + nd : 'Sugestão para amanhã', note: '', banner: doneBanner('Você já treinou hoje. Descanse; o próximo treino do plano está abaixo.') };
+    }
+    if (inf.doneToday) return { w: inf.w, title: 'Sugestão para amanhã', note: reasonNote(inf), banner: doneBanner('Você já treinou hoje. Descanse; a próxima sugestão está abaixo.') };
+    return { w: inf.w, title: 'Sugestão de hoje', note: reasonNote(inf), banner: '' };
   }
   function customWorkout(c) {
     var exs = c.exs.map(function (e) { return { id: e.id, name: e.name, cue: e.cue || '', timed: !!e.timed, iso: !!e.iso, sets: e.sets, reps: e.timed ? null : e.reps, secs: e.timed ? e.secs : null, rest: e.rest }; });
@@ -403,9 +447,9 @@
   }
   function homeTab() {
     var p = W.profile, kg = weightNow(), b = bmi(kg, p.cm), html = '';
-    var done = logsIn(D.weekKey(new Date())).length, pk = todaysPick(p), s = pk.w || suggestion(p);
+    var done = logsIn(D.weekKey(new Date())).length, pk = todaysPick(p), inf = suggestionInfo(p), hc = homeCard(p, pk, inf), s = hc.w;
     html += deloadBanner() + panel('Esta semana', '<div class="wk-dots">' + weekDots(p) + '</div><div class="xp-row"><span>' + pl(done, 'treino', 'treinos') + ' de ' + p.days + '</span><span>' + (done >= p.days ? 'Meta cumprida ✓' : 'faltam ' + (p.days - done)) + '</span></div>' + bar(Math.min(1, done / p.days), 'var(--accent)', 6));
-    html += (pk.rest ? panel('Hoje é dia de descanso', '<p style="margin:0">Seu plano marca descanso hoje. Dormir bem e se alimentar direito também é parte do treino.</p>', { accent: 'var(--success)' }) : '') + panel(pk.rest ? 'Se quiser treinar hoje' : pk.fromPlan ? 'Treino de hoje (seu plano)' : 'Sugestão de hoje', '<p class="wk-name" style="margin:0 0 4px">' + esc(s.name) + '</p><p class="wk-sub" style="margin:0 0 12px">' + T.LEVELS[s.level] + ' · ' + T.PLACES[s.place] + ' · ~' + s.mins + ' min</p>' + summaryList(s) +
+    html += hc.banner + panel(hc.title, '<p class="wk-name" style="margin:0 0 4px">' + esc(s.name) + '</p><p class="wk-sub" style="margin:0 0 12px">' + T.LEVELS[s.level] + ' · ' + T.PLACES[s.place] + ' · ~' + s.mins + ' min</p>' + hc.note + summaryList(s) +
       '<div style="margin-top:12px"><button class="btn" data-act="wk-start" data-id="' + s.key + '">Iniciar treino</button><button class="btn ghost" data-act="wk-tab" data-id="treinos" style="margin-top:8px">Escolher outro treino</button></div>', { accent: 'var(--gold)' });
     html += recoveryPanel() + panel('Seu corpo', '<div class="wk-tiles">' + tile(fmt(kg) + ' kg', 'peso') + tile(p.cm + ' cm', 'altura') + (b ? tile(fmt(b), 'IMC · ' + bmiCat(b)) : '') + '</div>' +
       '<button class="btn small" data-act="wk-tab" data-id="imc" style="margin-top:10px;width:auto">Verificar meu IMC</button> <button class="btn ghost small" data-act="wk-tab" data-id="corpo" style="margin-top:10px;width:auto">Registrar medidas</button>');
