@@ -94,6 +94,12 @@ var Domain = (() => {
     saveJournal: () => saveJournal,
     seasonProgress: () => seasonProgress,
     setFrame: () => setFrame,
+    COSMETICS: () => COSMETICS,
+    cosmeticById: () => cosmeticById,
+    buyCosmetic: () => buyCosmetic,
+    equipCosmetic: () => equipCosmetic,
+    equippedLook: () => equippedLook,
+    ownsCosmetic: () => ownsCosmetic,
     setTitle: () => setTitle,
     startSeason: () => startSeason,
     streaks: () => streaks,
@@ -1058,7 +1064,8 @@ var Domain = (() => {
       goals: s2.goals || [],
       reviews: s2.reviews || [],
       bonusCoins: s2.bonusCoins || 0,
-      player: { ...p, title: p.title || null, frame: p.frame != null ? p.frame : null }
+      cosmetics: s2.cosmetics || [],
+      player: { ...p, title: p.title || null, frame: p.frame != null ? p.frame : null, look: { frame: null, seal: null, skin: null, ...p.look || {} } }
     };
   }
   function isMissionScheduled(m, now) {
@@ -1067,7 +1074,7 @@ var Domain = (() => {
   var coinsForXp = (xp) => Math.max(1, Math.round(xp / 10));
   function coinBalance(state) {
     const earned = state.completions.reduce((sum, c) => sum + coinsForXp(c.xp), 0) + (state.seasonCoins || 0) + (state.bonusCoins || 0);
-    const spent = (state.purchases || []).reduce((sum, p) => sum + p.cost, 0);
+    const spent = (state.purchases || []).reduce((sum, p) => sum + p.cost, 0) + (state.cosmetics || []).reduce((sum, c) => sum + c.cost, 0);
     return earned - spent;
   }
   function updateMission(state, missionId, patch, now = /* @__PURE__ */ new Date()) {
@@ -1399,6 +1406,57 @@ var Domain = (() => {
   function setFrame(state, idx) {
     if (idx !== null && !(idx >= 0 && idx <= state.rankIndex)) return state;
     return { ...state, player: { ...state.player, frame: idx } };
+  }
+
+  // ---- Loja de aparência: molduras da foto, selos e estilos do painel (comprados com moedas) ----
+  // minRank: índice do rank exigido (0 = E ... 8 = MONARCA). A parte visual fica em cosmetics.js e styles.css.
+  var COSMETICS = [
+    { id: "neon", cat: "frame", name: "Neon Pulsante", cost: 60, desc: "Contorno que respira na cor do seu rank." },
+    { id: "ouro", cat: "frame", name: "Ouro Duplo", cost: 90, desc: "Aro dourado com filete interno." },
+    { id: "hud", cat: "frame", name: "Mira Tática", cost: 120, desc: "Cantos de HUD, sem curvas." },
+    { id: "aurora", cat: "frame", name: "Aurora Giratória", cost: 180, desc: "Gradiente que gira em volta da foto.", minRank: 3 },
+    { id: "chamas", cat: "frame", name: "Chamas Vivas", cost: 240, desc: "Borda em brasa, com labaredas.", minRank: 4 },
+    { id: "trono", cat: "frame", name: "Aura do Monarca", cost: 400, desc: "Coroa de luz e aura violeta.", minRank: 5 },
+    { id: "ferro", cat: "frame", fx: true, name: "Ferro Negro", cost: 320, desc: "Ferro escovado com rebites e luz correndo pela borda.", minRank: 3 },
+    { id: "tempestade", cat: "frame", fx: true, name: "Tempestade", cost: 380, desc: "Raios saltam da moldura e a borda crepita.", minRank: 4 },
+    { id: "inferno", cat: "frame", fx: true, name: "Inferno", cost: 420, desc: "Fogo de verdade, com brasas subindo.", minRank: 4 },
+    { id: "arcano", cat: "frame", fx: true, name: "Fogo Arcano", cost: 520, desc: "Chamas do laranja ao violeta, com faíscas rosas.", minRank: 5 },
+    { id: "runico", cat: "frame", fx: true, name: "Ferro Rúnico", cost: 560, desc: "Ferro negro rachado por magma, com brasas.", minRank: 5 },
+    { id: "veterano", cat: "seal", name: "Veterano", cost: 50, desc: "Escudo com divisas." },
+    { id: "raio", cat: "seal", name: "Relâmpago", cost: 70, desc: "Hexágono com raio elétrico." },
+    { id: "estrela", cat: "seal", name: "Estrela de Ouro", cost: 90, desc: "Estrela que brilha de tempos em tempos." },
+    { id: "sequencia", cat: "seal", name: "Chama da Sequência", cost: 110, desc: "Mostra os dias da sua sequência atual." },
+    { id: "coroa", cat: "seal", name: "Coroa", cost: 200, desc: "Coroa dourada com brilho.", minRank: 4 },
+    { id: "olho", cat: "seal", name: "Olho do Monarca", cost: 280, desc: "Olho violeta que pisca.", minRank: 6 },
+    { id: "vidro", cat: "skin", name: "Vidro Fosco", cost: 80, desc: "Vidro translúcido com reflexo." },
+    { id: "grade", cat: "skin", name: "Grade Cyber", cost: 100, desc: "Grade luminosa que desliza ao fundo." },
+    { id: "carbono", cat: "skin", name: "Fibra de Carbono", cost: 130, desc: "Trama de carbono com brilho metálico." },
+    { id: "sistema", cat: "skin", name: "Janela do Sistema", cost: 170, desc: "Linhas de varredura e cursor ativo." },
+    { id: "boreal", cat: "skin", name: "Aurora Boreal", cost: 230, desc: "Cortinas de luz que se movem.", minRank: 3 },
+    { id: "monarca", cat: "skin", name: "Trono do Monarca", cost: 420, desc: "Violeta profundo com estrelas.", minRank: 5 }
+  ];
+  function cosmeticById(id) { return COSMETICS.find((c) => c.id === id) || null; }
+  function ownsCosmetic(state, id) { return (state.cosmetics || []).some((c) => c.id === id); }
+  function buyCosmetic(state, id, now = /* @__PURE__ */ new Date()) {
+    const c = cosmeticById(id);
+    if (!c) return { state, events: [], error: "Item não encontrado." };
+    if (ownsCosmetic(state, id)) return { state, events: [], error: "Você já tem este item." };
+    if (c.minRank != null && state.rankIndex < c.minRank) return { state, events: [], error: "Rank " + RANKS[c.minRank].id + " necessário." };
+    if (coinBalance(state) < c.cost) return { state, events: [], error: "Moedas insuficientes." };
+    return { state: { ...state, cosmetics: [...state.cosmetics || [], { id: c.id, cost: c.cost, at: now.toISOString() }] }, events: [] };
+  }
+  function equipCosmetic(state, cat, id) {
+    if (cat !== "frame" && cat !== "seal" && cat !== "skin") return state;
+    if (id) {
+      const c = cosmeticById(id);
+      if (!c || c.cat !== cat || !ownsCosmetic(state, id)) return state;
+    }
+    return { ...state, player: { ...state.player, look: { frame: null, seal: null, skin: null, ...state.player.look || {}, [cat]: id || null } } };
+  }
+  /** Aparência equipada; ignora itens que o save não possui (backup adulterado ou item removido). */
+  function equippedLook(state) {
+    const l = state.player && state.player.look || {}, pick = (cat) => l[cat] && ownsCosmetic(state, l[cat]) && (cosmeticById(l[cat]) || {}).cat === cat ? l[cat] : null;
+    return { frame: pick("frame"), seal: pick("seal"), skin: pick("skin") };
   }
 
 

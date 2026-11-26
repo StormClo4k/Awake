@@ -199,7 +199,7 @@
   var REWARD_SUGGESTIONS = [['Um episódio da série', 30], ['Sobremesa favorita', 40], ['Café especial', 35], ['Noite de jogo sem culpa', 80], ['Comprar um livro', 120], ['Um dia de folga completo', 150], ['Jantar fora', 200]];
   var rewardDraft = { name: '', cost: '' };
 
-  AW.views['#/store'] = function () {
+  function storeRewards() {
     var g = G(), bal = D.coinBalance(g), rewards = g.rewards || [], buys = (g.purchases || []).slice().reverse().slice(0, 10);
     return '<div class="between"><h1 class="screen-title">LOJA</h1><span class="coins big">◆ ' + fmt(bal) + '</span></div>' +
       '<p class="dim" style="margin:-4px 0 0">Cada missão concluída rende 1 moeda a cada 10 XP. Gaste em recompensas que você mesmo define.</p>' +
@@ -214,6 +214,67 @@
         '<p class="label" style="margin-top:14px">SUGESTÕES</p><div class="row">' + REWARD_SUGGESTIONS.map(function (s, i) { return chip(s[0] + ' · ' + s[1], false, 'data-act="reward-sug" data-id="' + i + '"'); }).join('') + '</div>' +
         '<div style="margin-top:14px"><button class="btn" data-act="reward-add">Adicionar à loja</button></div>') +
       (buys.length ? panel('Resgatados', '<div class="stack" style="gap:8px">' + buys.map(function (p) { return '<div class="hist"><span class="dt">' + AW.dm(p.at) + '</span><span style="flex:1">' + esc(p.name) + '</span><span class="mute">−' + fmt(p.cost) + '</span></div>'; }).join('') + '</div>') : '');
+  }
+
+  /* ---- aparência: molduras, selos e estilos do painel ---- */
+  var storeTab = 'rewards', tryLook = {};
+  var CAT_TABS = [['rewards', 'Recompensas'], ['frame', 'Molduras'], ['seal', 'Selos'], ['skin', 'Painel']];
+  var CAT_INTRO = {
+    frame: 'Molduras da foto do jogador. Aparecem no Painel e no Perfil.',
+    seal: 'Selos ficam presos ao canto da foto, como um distintivo.',
+    skin: 'Estilos da janela de Status do Painel (e do cartão do Perfil).'
+  };
+  function storeTabs() {
+    return '<div class="cz-tabs" role="tablist" aria-label="Seções da loja">' + CAT_TABS.map(function (t) { return chip(t[1], storeTab === t[0], 'data-act="store-tab" data-id="' + t[0] + '"'); }).join('') + '</div>';
+  }
+  function cosmeticsView() {
+    var g = G(), bal = D.coinBalance(g), cat = storeTab, look = D.equippedLook(g), now = AW.getNow();
+    var av = AW.avatarGet(), streak = D.deriveStats(g, now).currentStreak, nv = D.levelProgress(g.totalXp).level;
+    var color = D.RANKS[g.player.frame != null ? g.player.frame : g.rankIndex].color, shown = {}, trying = false;
+    ['frame', 'seal', 'skin'].forEach(function (k) {
+      shown[k] = look[k];
+      if (Object.prototype.hasOwnProperty.call(tryLook, k) && (tryLook[k] || null) !== (look[k] || null)) { shown[k] = tryLook[k] || null; trying = true; }
+    });
+    var o = { avatar: av, color: color, nv: nv, streak: streak };
+    var items = [{ id: '', name: 'Padrão', cost: 0, desc: 'O visual original do seu rank.' }].concat(D.COSMETICS.filter(function (c) { return c.cat === cat; }));
+    var cards = items.map(function (it) {
+      var owned = !it.id || D.ownsCosmetic(g, it.id), equipped = (look[cat] || '') === (it.id || '');
+      var needRank = it.minRank != null && g.rankIndex < it.minRank, isTry = trying && (shown[cat] || '') === (it.id || '');
+      var btn;
+      if (equipped) btn = '<button class="btn ghost" disabled>Equipado ✓</button>';
+      else if (owned) btn = '<button class="btn" data-act="cos-equip" data-cat="' + cat + '" data-id="' + it.id + '">Equipar</button>';
+      else if (needRank) btn = '<button class="btn ghost" disabled>Requer Rank ' + D.RANKS[it.minRank].id + '</button>';
+      else if (bal >= it.cost) btn = '<button class="btn" data-act="cos-buy" data-cat="' + cat + '" data-id="' + it.id + '">◆ ' + fmt(it.cost) + ' · Comprar</button>';
+      else btn = '<button class="btn ghost" disabled>Faltam ◆ ' + fmt(it.cost - bal) + '</button>';
+      return '<div class="cz-card' + (isTry ? ' try' : '') + (equipped ? ' on' : '') + '">' +
+        (equipped ? '<span class="cz-tag">EM USO</span>' : '') + (!owned && needRank ? '<span class="cz-lock">RANK ' + D.RANKS[it.minRank].id + '</span>' : '') +
+        '<button type="button" class="cz-view" data-act="cos-try" data-cat="' + cat + '" data-id="' + it.id + '" aria-label="Ver prévia: ' + esc(it.name) + '">' + Cosmetics.thumb(cat, it.id, o) + '</button>' +
+        '<div class="cz-nm">' + esc(it.name) + '</div><div class="cz-ds">' + esc(it.desc) + '</div>' + btn + '</div>';
+    }).join('');
+    return '<div class="cz-sticky">' + Cosmetics.preview(shown, { avatar: av, color: color, nv: nv, streak: streak, name: g.player.name, trying: trying }) + '</div>' +
+      '<p class="dim" style="margin:0">' + CAT_INTRO[cat] + ' Toque numa miniatura para ver a prévia antes de comprar.</p><div class="cz-grid">' + cards + '</div>';
+  }
+  AW.views['#/store'] = function () {
+    if (storeTab === 'rewards') return storeRewards().replace('</p>', '</p>' + storeTabs());
+    var g = G();
+    return '<div class="between"><h1 class="screen-title">LOJA</h1><span class="coins big">◆ ' + fmt(D.coinBalance(g)) + '</span></div>' + storeTabs() + cosmeticsView();
+  };
+  AW.handlers['store-tab'] = function (el) { storeTab = el.getAttribute('data-id'); tryLook = {}; AW.render(); };
+  AW.handlers['cos-try'] = function (el) {
+    var cat = el.getAttribute('data-cat'), id = el.getAttribute('data-id') || null;
+    if (Object.prototype.hasOwnProperty.call(tryLook, cat) && tryLook[cat] === id) delete tryLook[cat]; else tryLook[cat] = id;
+    AW.render();
+  };
+  AW.handlers['cos-equip'] = function (el) {
+    var cat = el.getAttribute('data-cat'), id = el.getAttribute('data-id') || null;
+    delete tryLook[cat];
+    AW.apply(function (g) { return { state: D.equipCosmetic(g, cat, id), events: [] }; }); AW.render();
+  };
+  AW.handlers['cos-buy'] = function (el) {
+    var cat = el.getAttribute('data-cat'), id = el.getAttribute('data-id'), c = D.cosmeticById(id);
+    if (AW.apply(function (g) { var r = D.buyCosmetic(g, id); return r.error ? r : { state: D.equipCosmetic(r.state, cat, id), events: [] }; })) {
+      delete tryLook[cat]; AW.render(); toast((c ? c.name : 'Item') + ' comprado e equipado');
+    }
   };
   document.addEventListener('input', function (ev) {
     var t = ev.target;

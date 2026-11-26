@@ -1,6 +1,6 @@
 /* Awakening — service worker: funciona offline e atualiza sozinho quando há internet. */
-var CACHE = 'awakening-v15';
-var SHELL = ['./', 'index.html', 'styles.css', 'domain.js', 'rankfx.js', 'app.js', 'features.js', 'treinos.js', 'workout.js', 'manifest.webmanifest', 'assets/favicon.png', 'assets/icon-192.png', 'assets/icon-512.png'];
+var CACHE = 'awakening-v17';
+var SHELL = ['./', 'index.html', 'styles.css', 'domain.js', 'rankfx.js', 'cosmetics.js', 'framefx.js', 'app.js', 'features.js', 'treinos.js', 'workout.js', 'manifest.webmanifest', 'assets/favicon.png', 'assets/icon-192.png', 'assets/icon-512.png'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return Promise.all(SHELL.map(function (u) { return c.add(u).catch(function () {}); })); }).then(function () { return self.skipWaiting(); }));

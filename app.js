@@ -285,12 +285,12 @@
   };
   /** Foto do jogador no Perfil: a mesma foto escolhida no Painel (nada de personagem ilustrado). */
   function profilePhoto(color) {
-    var av = avatarGet(), ri = game.rankIndex;
+    var av = avatarGet(), ri = game.rankIndex, look = D.equippedLook(game), cz = window.Cosmetics;
     var inner = av
       ? '<img src="' + av + '" alt="Sua foto de jogador" draggable="false">'
       : '<button type="button" class="sp-add" data-act="av-pick" aria-label="Adicionar foto">' + ICO.cam + '<span>Adicionar foto</span></button>';
-    return '<div class="sp pf-photo" style="--c:' + color + '"><div class="sp-r">' + (ri >= 5 ? '<div class="sp-f2"></div>' : '') +
-      '<div class="sp-fr' + (ri >= 3 ? ' hi' : '') + '"><div class="sp-in">' + inner + '</div></div>' +
+    return '<div class="sp pf-photo" style="--c:' + color + '"><div class="sp-r">' + (ri >= 5 && !look.frame ? '<div class="sp-f2"></div>' : '') +
+      '<div class="sp-fr' + (ri >= 3 ? ' hi' : '') + (cz ? cz.frameCls(look.frame) : '') + '">' + (cz ? cz.frameFx(look.frame) : '') + '<div class="sp-in">' + inner + '</div></div>' + (cz ? cz.seal(look.seal, D.deriveStats(game, now).currentStreak) : '') +
       '<button type="button" class="sp-ib sp-cam" data-act="av-pick" aria-label="' + (av ? 'Trocar foto' : 'Adicionar foto') + '" title="' + (av ? 'Trocar foto' : 'Adicionar foto') + '">' + ICO.cam + '</button>' +
       (av ? '<button type="button" class="sp-ib sp-del" data-act="av-del" aria-label="Remover foto" title="Remover foto">' + ICO.x + '</button>' : '') +
       '</div><input type="file" id="av-file" accept="image/*" hidden></div>';
@@ -299,15 +299,15 @@
   function statusPanel(rank, lvl, frameColor) {
     var c = rank.color, ri = game.rankIndex, av = avatarGet(), stats = D.deriveStats(game, now), nv = Number(lvl.level);
     var top = D.ATTRIBUTE_IDS.reduce(function (b, id) { return (!b || stats.attributeLevels[id] > stats.attributeLevels[b]) ? id : b; }, null), td = D.ATTRIBUTES[top];
-    var streak = stats.currentStreak, today = D.xpToday(game, now);
+    var streak = stats.currentStreak, today = D.xpToday(game, now), look = D.equippedLook(game), cz = window.Cosmetics || { frameCls: function () { return ''; }, skinCls: function () { return ''; }, skinFx: function () { return ''; }, skinAccent: function () { return null; }, seal: function () { return ''; } };
     var photo = av
       ? '<img src="' + av + '" alt="Sua foto de jogador" draggable="false">'
       : '<button type="button" class="sp-add" data-act="av-pick" aria-label="Adicionar foto">' + ICO.cam + '<span>Adicionar foto</span></button>';
     var body = '<div class="sp" style="--c:' + c + '"><div class="sp-grid">' +
       '<div class="sp-l">' + (window.RankFx ? RankFx.badge(ri, c, rank.emblem, rank.name + ' · ' + rank.title) : rankBadge(rank, 96)) +
         '<div class="sp-k">RANK ATUAL</div><div class="sp-n">' + esc(rank.name.toUpperCase()) + '</div><div class="sp-t">' + esc(rank.title) + '</div></div>' +
-      '<div class="sp-r">' + (ri >= 5 ? '<div class="sp-f2"></div>' : '') +
-        '<div class="sp-fr' + (ri >= 3 ? ' hi' : '') + '"><div class="sp-in">' + photo + '</div></div>' +
+      '<div class="sp-r">' + (ri >= 5 && !look.frame ? '<div class="sp-f2"></div>' : '') +
+        '<div class="sp-fr' + (ri >= 3 ? ' hi' : '') + cz.frameCls(look.frame) + '">' + (cz.frameFx ? cz.frameFx(look.frame) : '') + '<div class="sp-in">' + photo + '</div></div>' + cz.seal(look.seal, streak) +
         '<button type="button" class="sp-ib sp-cam" data-act="av-pick" aria-label="' + (av ? 'Trocar foto' : 'Adicionar foto') + '" title="' + (av ? 'Trocar foto' : 'Adicionar foto') + '">' + ICO.cam + '</button>' +
         (av ? '<button type="button" class="sp-ib sp-del" data-act="av-del" aria-label="Remover foto" title="Remover foto">' + ICO.x + '</button>' : '') +
         '<div class="sp-nv">NV ' + nv + '</div></div></div>' +
@@ -319,7 +319,7 @@
       '<div class="sp-xp"><div class="sp-bar"><i style="width:' + (lvl.ratio * 100).toFixed(1) + '%"></i></div><div class="xp-row"><span>' +
         (lvl.isMax ? 'NÍVEL MÁXIMO' : lvl.xpIntoLevel + ' / ' + lvl.xpForNext + ' XP') + '</span><span style="color:var(--success)">' + (lvl.isMax ? 'o trono é seu' : 'faltam ' + (lvl.xpForNext - lvl.xpIntoLevel) + ' para o Nv. ' + (nv + 1)) + '</span></div></div></div>' +
       '<input type="file" id="av-file" accept="image/*" hidden>';
-    return panel('Status', body, { accent: frameColor });
+    return panel('Status', cz.skinFx(look.skin) + body, { accent: cz.skinAccent(look.skin) || frameColor, cls: cz.skinCls(look.skin).trim() });
   }
   function viewDashboard() {
     var rank = D.RANKS[game.rankIndex], lvl = D.levelProgress(game.totalXp), pending = D.pendingDaily(game, now);
@@ -405,21 +405,22 @@
   }
   function titlesPanel() {
     var titles = D.availableTitles(game), cur = game.player.title, fr = game.player.frame;
-    return panel('Título e moldura', '<p class="label">TÍTULO</p><div class="row">' + chip('Nenhum', !cur, 'data-act="title" data-id=""') +
+    return panel('Título e cor da janela', '<p class="label">TÍTULO</p><div class="row">' + chip('Nenhum', !cur, 'data-act="title" data-id=""') +
       titles.map(function (t) { return chip(t.label, cur === t.id, 'data-act="title" data-id="' + esc(t.id) + '"', t.color); }).join('') +
-      '</div><p class="label" style="margin-top:16px">MOLDURA (COR DA JANELA)</p><div class="row">' + chip('Automática', fr == null, 'data-act="frame" data-id=""') +
-      D.RANKS.slice(0, game.rankIndex + 1).map(function (r, i) { return chip(r.id, fr === i, 'data-act="frame" data-id="' + i + '"', r.color); }).join('') + '</div>');
+      '</div><p class="label" style="margin-top:16px">COR DA JANELA</p><div class="row">' + chip('Automática', fr == null, 'data-act="frame" data-id=""') +
+      D.RANKS.slice(0, game.rankIndex + 1).map(function (r, i) { return chip(r.id, fr === i, 'data-act="frame" data-id="' + i + '"', r.color); }).join('') + '</div><p class="help">Molduras da foto, selos e estilos do painel ficam na <a href="#/store" style="color:var(--glow)">Loja</a>.</p>');
   }
   function viewCharacter() {
     var rank = D.RANKS[game.rankIndex], lvl = D.levelProgress(game.totalXp), stats = D.deriveStats(game, now), up = D.nextRank(game, now);
     var frameColor = D.RANKS[game.player.frame != null ? game.player.frame : game.rankIndex].color, curTitle = D.currentTitle(game);
-    var html = panel('Personagem',
+    var lk = D.equippedLook(game), cz2 = window.Cosmetics;
+    var html = panel('Personagem', (cz2 ? cz2.skinFx(lk.skin) : '') +
       '<div style="display:flex;flex-direction:column;align-items:center;gap:4px">' + profilePhoto(frameColor) +
       '<input id="char-name" class="name-input" maxlength="24" value="' + esc(game.player.name) + '" aria-label="Nome do personagem" />' +
       '<div style="font-family:var(--display);font-size:12px;letter-spacing:1.5px;color:' + rank.color + '">' + esc(rank.name) + ' · ' + esc(rank.title) + '</div>' +
       (curTitle ? '<div style="font-weight:700;letter-spacing:1px;color:' + curTitle.color + '">' + esc(curTitle.label) + '</div>' : '') +
       '<div class="dim" style="font-weight:600">Nível ' + lvl.level + ' · ' + game.totalXp + ' XP</div>' +
-      '<div id="save-name" class="hidden" style="align-self:stretch;margin-top:10px"><button class="btn" data-act="rename">Salvar nome</button></div></div>', { accent: frameColor });
+      '<div id="save-name" class="hidden" style="align-self:stretch;margin-top:10px"><button class="btn" data-act="rename">Salvar nome</button></div></div>', { accent: (cz2 && cz2.skinAccent(lk.skin)) || frameColor, cls: cz2 ? cz2.skinCls(lk.skin).trim() : '' });
 
     html += titlesPanel();
     html += panel('Atributos', '<div class="stack" style="gap:18px">' + D.ATTRIBUTE_IDS.map(function (id) { return attrRow(id, game.attributeXp[id], true); }).join('') + '</div>');
@@ -763,7 +764,7 @@
     getGame: function () { return game; }, getNow: function () { return now; }, setGame: setGame, isStorageOk: function () { return storageOk; },
     apply: apply, act: act, render: render, route: route, save: save, load: load, saveSettings: saveSettings, takeSnapshot: takeSnapshot, applyTheme: applyTheme,
     showToast: showToast, openModal: openModal, closeModal: closeModal, handleEvents: handleEvents,
-    esc: esc, panel: panel, bar: bar, chip: chip, rankBadge: rankBadge, missionCard: missionCard, attrRow: attrRow,
+    avatarGet: avatarGet, esc: esc, panel: panel, bar: bar, chip: chip, rankBadge: rankBadge, missionCard: missionCard, attrRow: attrRow,
     pad: pad, dm: dm, DIFF_COLOR: DIFF_COLOR, TYPE_LABEL: TYPE_LABEL, DAYS3: DAYS3, MOODS: MOODS, lastError: function () { return lastError; }
   };
 

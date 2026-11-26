@@ -1,4 +1,22 @@
-# Awakening — versão HTML/JS (v0.7.4)
+# Awakening — versão HTML/JS (v0.8.1)
+
+## v0.8.1: molduras animadas de alta qualidade
+- Novo arquivo `framefx.js`: molduras desenhadas em canvas que **se estendem para fora da foto**, como as molduras de perfil da Steam. Cinco molduras novas na aba Molduras da Loja:
+  - **Inferno** (420) e **Fogo Arcano** (520): fogo de partículas com chamas alongadas, turbulência, faíscas e brasas. O Arcano vai do laranja ao rosa e ao violeta.
+  - **Tempestade** (380): raios que saltam da moldura e borda elétrica crepitante.
+  - **Ferro Negro** (320): ferro escovado com rebites, chanfro e uma luz que percorre a borda, mais um fio de luz que respira junto à foto.
+  - **Ferro Rúnico** (560): o mesmo ferro, rachado por magma, com brasas subindo.
+- A foto nunca é coberta pelo efeito. O desenho só roda para o que está visível na tela, pausa com a aba escondida e, com "animações reduzidas", mostra um quadro estático.
+- Rank mínimo: Ferro Negro B, Tempestade A, Inferno A, Fogo Arcano S, Ferro Rúnico S. Cache `awakening-v17`.
+
+## v0.8.0: loja de aparência
+- A **Loja** ganhou 4 seções: Recompensas (como antes), **Molduras**, **Selos** e **Painel**. Tudo é comprado com as mesmas moedas e fica no save (`cosmetics` e `player.look`), então entra no backup. Itens comprados são equipados na hora.
+- **Molduras da foto (6):** Neon Pulsante, Ouro Duplo, Mira Tática, Aurora Giratória (Rank B), Chamas Vivas (Rank A), Aura do Monarca (Rank S).
+- **Selos no canto da foto (6):** Veterano, Relâmpago, Estrela de Ouro, Chama da Sequência (mostra seus dias seguidos), Coroa (Rank A), Olho do Monarca (Rank SS).
+- **Estilos do painel Status (6):** Vidro Fosco, Grade Cyber, Fibra de Carbono, Janela do Sistema, Aurora Boreal (Rank B), Trono do Monarca (Rank S). Também vale para o cartão do Perfil. Têm versão para o modo claro.
+- **Prévia antes de comprar:** toque na miniatura e o painel de prévia (fixo no topo) mostra a combinação, inclusive de itens de rank ainda bloqueado.
+- Itens de rank alto só podem ser comprados ao atingir o rank. Se um save trouxer item equipado que não foi comprado, ele é ignorado.
+- O rótulo antigo "Moldura (cor da janela)" do Perfil virou "Cor da janela". Novo arquivo `cosmetics.js`. Cache `awakening-v16`.
 
 ## v0.7.4: sugestão de treino com rotação
 - A sugestão do Início agora segue o **último treino registrado** (não a contagem da semana), pula grupos ainda em recuperação (~48 h) e explica o motivo. Se você já treinou hoje, o card mostra "Treino de hoje cumprido ✓" e sugere o próximo (com o Plano semanal, o próximo dia do plano). Cardio alterna entre as opções. Cache `awakening-v15`.
